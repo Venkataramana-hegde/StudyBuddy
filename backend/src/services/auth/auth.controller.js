@@ -36,6 +36,15 @@ export const signup = async (req, res) => {
     // 4. Generate token from NEW user
     const token = user.getSignedJwtToken();
 
+    // In both login and signup success handlers:
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax", // Changed from 'lax' to 'strict'
+      path: "/", // Accessible across all routes
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     // 5. Return response
     res.status(201).json({
       success: true,
@@ -77,6 +86,15 @@ export const login = async (req, res) => {
     }
     const token = existingUser.getSignedJwtToken();
 
+    // In both login and signup success handlers:
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax", 
+      path: "/", // Accessible across all routes
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
     return res.status(200).json({
       success: true,
       token,
@@ -92,26 +110,24 @@ export const login = async (req, res) => {
 };
 
 export const currentUser = async(req, res) => {
-  try{
-    const user = await User.findById(req.user._id);
-
-    if(!user){
-      return handleError(res, {
-        statusCode: 404,
-        message: "User not found"
-      })
+  try {
+    // Middleware already attached user to req
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: "Not authenticated",
+      });
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      }
-    })
-  }
-  catch(error){
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+      },
+    });
+  } catch (error) {
     handleError(res, error);
   }
 }

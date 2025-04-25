@@ -4,12 +4,16 @@ import User from "../services/auth/auth.model.js";
 const authenticate = async (req, res, next) => {
   // 1. Get token from multiple sources
   let token;
+
+  // Check if token is in the Authorization header
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
-  } else if (req.cookies?.token) {
+  }
+  // Check if token is in the cookies
+  else if (req.cookies?.token) {
     token = req.cookies.token;
   }
 
@@ -34,7 +38,7 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    // 5. Attach user to request
+    // 5. Attach user to request for access in subsequent routes
     req.user = user;
     next();
   } catch (error) {

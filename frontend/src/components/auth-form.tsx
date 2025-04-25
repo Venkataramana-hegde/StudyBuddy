@@ -50,6 +50,7 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(
             variant === "signup"
               ? { name, email, password }
@@ -59,11 +60,14 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
       );
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Something went wrong");
 
-      toast.success(`${variant === "signup" ? "Signup" : "Login"} successful`);
-      router.push("/"); // Replace with wherever you want to redirect
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (res.ok) {
+        // Optional: Save user to context
+        // Now redirect
+        router.push("/");
+      } else {
+        toast.error(data.message || "Login failed");
+      }
     } catch (err: any) {
       toast.error(err.message);
     }

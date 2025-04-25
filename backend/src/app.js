@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import connectDB from "./config/db.js";
 import routes from "./routes.js";
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
@@ -10,12 +11,16 @@ const app = express();
 
 connectDB();    
 
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
-}))
+  })
+);
+
+app.use(cookieParser());
 
 app.use(express.json({limit: '10mb'}));
 app.use(express.urlencoded({extended:true, limit:"10mb"}));
