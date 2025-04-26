@@ -1,12 +1,16 @@
 export const handleError = (res, error) => {
-  console.error(error);
-  const status = error.statusCode || 500;
+  // Default values
+  const defaultMessage = "Something went wrong";
+  const defaultStatus = 400;
+
+  // Customizable properties (if error provides them)
+  const message = error.message || defaultMessage;
+  const status = error.status || error.statusCode || defaultStatus;
+
+  console.error(`[Error ${status}]:`, message, error.stack || "");
+
   res.status(status).json({
     success: false,
-    error: error.message || "Server error",
+    error: message,
   });
-};
-
-export const handleSuccess = (res, data, statusCode = 200) => {
-  res.status(statusCode).json({ success: true, data });
 };

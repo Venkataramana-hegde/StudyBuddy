@@ -2,6 +2,7 @@ import { Router } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import authRoutes from "./services/auth/auth.routes.js";
+import groupRoutes from "./services/groups/groups.routes.js";
 
 const router = Router();
 
@@ -22,6 +23,7 @@ router.get("/", (req, res) => {
 })
 
 router.use("/api/auth", authRoutes);
+router.use("/api/", groupRoutes)
 
 router.use((req, res) => {
   res.status(404).json({ error: "Not Found" });

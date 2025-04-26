@@ -1,31 +1,77 @@
 "use client";
 
 import * as React from "react";
-import { DropdownMenuCheckboxItemProps } from "@radix-ui/react-dropdown-menu";
-
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Image from "next/image";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-type Checked = DropdownMenuCheckboxItemProps["checked"];
 
 const Navbar = () => {
-  const [showStatusBar, setShowStatusBar] = React.useState<Checked>(true);
-  const [showActivityBar, setShowActivityBar] = React.useState<Checked>(false);
-  const [showPanel, setShowPanel] = React.useState<Checked>(false);
+  const [user, setUser] = React.useState<{
+    name: string;
+    email: string;
+  } | null>(null);
+  const router = useRouter();
+
+  // Fetch user details on mount
+  React.useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/api/auth/current-user", {
+          credentials: "include",
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setUser({
+            name: data.user.name,
+            email: data.user.email,
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching user:", err);
+      }
+    };
+
+    fetchUser();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Logout failed");
+      }
+
+      router.push("/sign-in");
+      router.refresh(); // Clear client cache
+    } catch (err) {
+      console.error("Error during logout:", err);
+      // Optional: Show error toast to user
+    }
+  };
+
   return (
     <nav className="w-full py-4 px-6 bg-bgDarkViolet text-white shadow-md">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          {/* Proper image implementation */}
           <Image
             src="/logo.png"
             alt="StudyBuddy Logo"
@@ -38,35 +84,27 @@ const Navbar = () => {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline">
-              <Avatar>
-                <AvatarImage src="https://github.com/shadcn.png" />
-                <AvatarFallback>CN</AvatarFallback>
-              </Avatar>
+            <Button
+              variant="outline"
+              className="text-white border-white hover:bg-white hover:text-bgDarkViolet"
+            >
+              {/* {user ? user.name : "Loading..."} */}
+              Profile
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56">
-            <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+          <DropdownMenuContent className="w-64">
+            {user && (
+              <DropdownMenuGroup>
+                <DropdownMenuItem className="flex flex-col items-start">
+                  <span className="font-medium">{user.name}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {user.email}
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            )}
             <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem
-              checked={showStatusBar}
-              onCheckedChange={setShowStatusBar}
-            >
-              Status Bar
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={showActivityBar}
-              onCheckedChange={setShowActivityBar}
-              disabled
-            >
-              Activity Bar
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={showPanel}
-              onCheckedChange={setShowPanel}
-            >
-              Panel
-            </DropdownMenuCheckboxItem>
+            <DropdownMenuItem onClick={handleLogout}>Log out</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

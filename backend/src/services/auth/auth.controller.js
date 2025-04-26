@@ -1,5 +1,5 @@
 import express from "express";
-import { handleError, handleSuccess } from "../utils/responseHandler.js";
+import { handleError } from "../utils/responseHandler.js";
 import jwt from "jsonwebtoken";
 
 import User from "./auth.model.js";
@@ -26,26 +26,22 @@ export const signup = async (req, res) => {
       });
     }
 
-    // 3. Create new user
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
     });
 
-    // 4. Generate token from NEW user
     const token = user.getSignedJwtToken();
 
-    // In both login and signup success handlers:
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax", // Changed from 'lax' to 'strict'
-      path: "/", // Accessible across all routes
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      sameSite: "lax", 
+      path: "/", 
+      maxAge: 30 * 24 * 60 * 60 * 1000, 
     });
 
-    // 5. Return response
     res.status(201).json({
       success: true,
       token,
@@ -86,13 +82,12 @@ export const login = async (req, res) => {
     }
     const token = existingUser.getSignedJwtToken();
 
-    // In both login and signup success handlers:
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax", 
-      path: "/", // Accessible across all routes
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      path: "/", 
+      maxAge: 30 * 24 * 60 * 60 * 1000, 
     });
 
     return res.status(200).json({
@@ -111,7 +106,6 @@ export const login = async (req, res) => {
 
 export const currentUser = async(req, res) => {
   try {
-    // Middleware already attached user to req
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -131,3 +125,23 @@ export const currentUser = async(req, res) => {
     handleError(res, error);
   }
 }
+
+export const logout = async (req, res) => {
+  try {
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Logout successful",
+    });
+  } catch (error) {
+    // Make sure error has proper status code
+    error.status = error.status || 500;
+    handleError(res, error);
+  }
+};
