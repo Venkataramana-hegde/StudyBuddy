@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation"; 
+
 import { useState, useEffect } from "react";
 import Footer from "@/components/Footer";
 import Hero from "@/components/Hero";
@@ -7,37 +9,54 @@ import Navbar from "@/components/Navbar";
 import StartSection from "@/components/StartSection";
 
 export default function HomePage() {
+  const router = useRouter();
   const [userName, setUserName] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch(
-          "http://localhost:5000/api/auth/current-user",
-          {
-            credentials: "include",
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+useEffect(() => {
+  const fetchUserData = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch(
+        "http://localhost:5000/api/auth/current-user",
+        {
+          credentials: "include",
         }
+      );
 
-        const data = await response.json();
-        setUserName(data.user?.name || "Guest");
-      } catch (err) {
-        console.error("Failed to fetch user data:", err);
-        setError(err instanceof Error ? err.message : "Unknown error occurred");
-      } finally {
-        setIsLoading(false);
+      if (response.status === 401) {
+        // Check for pending group invite
+        const pendingGroupId = localStorage.getItem("pendingGroupId");
+        if (pendingGroupId) {
+          localStorage.removeItem("pendingGroupId");
+          return router.push(`/invite-group?groupId=${pendingGroupId}`);
+        }
+        return router.push(`/sign-in?redirect=/`);
       }
-    };
 
-    fetchUserData();
-  }, []);
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+
+      const data = await response.json();
+      setUserName(data.user?.name || "Guest");
+
+      // Final check for pending invites after successful auth
+      const pendingGroupId = localStorage.getItem("pendingGroupId");
+      if (pendingGroupId) {
+        localStorage.removeItem("pendingGroupId");
+        router.push(`/invite-group?groupId=${pendingGroupId}`);
+      }
+    } catch (err) {
+      console.error("Failed to fetch user data:", err);
+      setError(err instanceof Error ? err.message : "Unknown error occurred");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  fetchUserData();
+}, [router]);
 
   if (isLoading) {
     return (

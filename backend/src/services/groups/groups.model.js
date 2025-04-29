@@ -21,6 +21,10 @@ const GroupSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true,
+    },
+    inviteCode: {
+        type: String,
+        unique: true,
     }
 }, {timestamps: true});
 

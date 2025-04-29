@@ -23,7 +23,7 @@ router.get("/", (req, res) => {
 })
 
 router.use("/api/auth", authRoutes);
-router.use("/api/", groupRoutes)
+router.use("/api/group", groupRoutes)
 
 router.use((req, res) => {
   res.status(404).json({ error: "Not Found" });

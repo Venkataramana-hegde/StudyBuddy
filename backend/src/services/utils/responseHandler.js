@@ -14,3 +14,12 @@ export const handleError = (res, error) => {
     error: message,
   });
 };
+
+
+export const response = (res, success, message, statusCode) => {
+  return res.status(statusCode).json({
+    success,
+    message,
+  });
+};
+// return response(res, true, "Group deleted successfully", 200);

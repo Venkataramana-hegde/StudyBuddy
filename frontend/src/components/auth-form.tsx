@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import Link from "next/link";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type AuthFormProps = {
   variant: "login" | "signup";
@@ -28,6 +29,9 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
     password: "",
   });
   const router = useRouter();
+  const searchParams = useSearchParams(); // ADD this
+
+  const redirect = searchParams.get("redirect"); // ADD this
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -35,41 +39,46 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, email, password } = formData;
-
-    if (!email || !password || (variant === "signup" && !name)) {
-      toast.error("Please fill in all fields");
-      return;
-    }
-
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/auth/${
-          variant === "signup" ? "signup" : "login"
-        }`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(
-            variant === "signup"
-              ? { name, email, password }
-              : { email, password }
-          ),
-        }
-      );
+      const res = await fetch(`http://localhost:5000/api/auth/${variant}`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(
+          variant === "signup"
+            ? {
+                name: formData.name,
+                email: formData.email,
+                password: formData.password,
+              }
+            : { email: formData.email, password: formData.password }
+        ),
+      });
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        const text = await res.text();
+        throw new Error(`Expected JSON but got: ${text.substring(0, 100)}`);
+      }
 
       const data = await res.json();
 
-      if (res.ok) {
-        // Optional: Save user to context
-        // Now redirect
-        router.push("/");
+      if (!res.ok) throw new Error(data.message || "Authentication failed");
+
+      // Check for pending invite before redirecting
+      const pendingRedirect = localStorage.getItem("inviteRedirect");
+      if (pendingRedirect) {
+        localStorage.removeItem("inviteRedirect");
+        window.location.href = pendingRedirect;
       } else {
-        toast.error(data.message || "Login failed");
+        // Use the redirect parameter if no pending invite
+        window.location.href = decodeURIComponent(redirect || "/");
       }
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Authentication failed");
     }
   };
 
@@ -134,7 +143,9 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
                 <>
                   Already have an account?{" "}
                   <Link
-                    href="/sign-in"
+                    href={`/sign-in?redirect=${encodeURIComponent(
+                      redirect || "/"
+                    )}`}
                     className="underline underline-offset-4"
                   >
                     Sign in
@@ -144,7 +155,9 @@ export function AuthForm({ variant, className, ...props }: AuthFormProps) {
                 <>
                   Don&apos;t have an account?{" "}
                   <Link
-                    href="/sign-up"
+                    href={`/sign-up?redirect=${encodeURIComponent(
+                      redirect || "/"
+                    )}`}
                     className="underline underline-offset-4"
                   >
                     Sign up
