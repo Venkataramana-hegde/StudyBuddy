@@ -13,15 +13,19 @@ export const createGroup = async (req, res) => {
     });
   }
   try {
-    let group = await Group.create({
+    const group = await Group.create({
       name,
       description,
       createdBy: req.user._id,
+      members: [req.user._id], // Add creator as first member
     });
-    group = await group.populate("createdBy", "name");
+
+    const populatedGroup = await group
+      .populate("createdBy", "name")
+
     return res.status(201).json({
       success: true,
-      data: group,
+      data: populatedGroup,
     });
   } catch (error) {
     handleError(res, error);
@@ -121,40 +125,53 @@ export const getGroupDetails = async (req, res) => {
 export const leaveGroup = async (req, res) => {
   const userId = req.user._id;
   const groupId = req.params.groupId;
-  if(!mongoose.Types.ObjectId.isValid(groupId)){
+
+  if (!mongoose.Types.ObjectId.isValid(groupId)) {
     return res.status(400).json({
       success: false,
-      message: "Invalid group ID"
-    })
+      message: "Invalid group ID",
+    });
   }
+
   try {
     const group = await Group.findById(groupId);
-    if(!group){
+    if (!group) {
       return res.status(404).json({
         success: false,
-        message: "Group not found"
-      })
+        message: "Group not found",
+      });
     }
-    if(!group.members.includes(userId)){
+
+    // Convert both IDs to strings for reliable comparison
+    const memberIds = group.members.map((member) => member.toString());
+    if (!memberIds.includes(userId.toString())) {
       return res.status(400).json({
         success: false,
-        message: "You are not a member of this group"
-      })
+        message: "You are not a member of this group",
+      });
+    }
+    if(group.createdBy.toString() === userId.toString()){
+      await Group.deleteOne({ _id: groupId });
+      return res.status(200).json({
+        success: true,
+        message: "Group deleted successfully",
+      });
     }
     group.members.pull(userId);
     await group.save();
-     return res.status(200).json({
-       success: true,
-       message: "Successfully left the group",
-       data: {
-         groupId: group._id,
-         remainingMembers: group.members.length,
-       },
-     });
+
+    return res.status(200).json({
+      success: true,
+      message: "Successfully left the group",
+      data: {
+        groupId: group._id,
+        remainingMembers: group.members.length,
+      },
+    });
   } catch (error) {
     handleError(res, error);
   }
-}
+};
 
 export const deleteGroup = async (req, res) => {
  console.log("Headers:", req.headers); // Check auth header

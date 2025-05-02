@@ -5,10 +5,11 @@ import React from 'react'
 const page = () => {
   return (
     <div>
-      <GroupNavbar />
-      {/* <ChatModal /> */}
+      {/* <GroupNavbar /> */}
+      <ChatModal />
+      {/* <ChatModal groupId="abc123" userId="venky99" senderName="Venkataramana" /> */}
     </div>
-  )
+  );
 }
 
 export default page

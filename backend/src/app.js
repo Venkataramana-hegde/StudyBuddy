@@ -4,6 +4,7 @@ import connectDB from "./config/db.js";
 import routes from "./routes.js";
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import fileUploadRoute from "./services/fileUpload.route.js"
 
 dotenv.config();
 
@@ -26,9 +27,7 @@ app.use(express.json({limit: '10mb'}));
 app.use(express.urlencoded({extended:true, limit:"10mb"}));
 
 app.use("/", routes);
+app.use("/api/file", fileUploadRoute);
 
-const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-    console.log(`Server is running on ${PORT}`);
-})
+export default app;
