@@ -4,7 +4,7 @@ import { sendMessage, getGroupMessages } from "./messages.controller.js";
 
 const router = Router();
 
-router.post("/:groupId/send", sendMessage);
-router.get("/:groupId/messages", getGroupMessages);
+router.post("/:groupId/send",authenticate, sendMessage);
+router.get("/:groupId/messages", authenticate, getGroupMessages);
 
 export default router;

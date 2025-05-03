@@ -29,6 +29,13 @@ export const sendMessage = async (req, res) => {
       message,
     });
 
+    req.io.to(groupId).emit("newGroupMessage", {
+      groupId,
+      senderId,
+      message: newMessage.message,
+      createdAt: newMessage.createdAt,
+    });
+
     return response(res, true, "Message sent successfully", 200);
   } catch (error) {
     handleError(res, error);
@@ -36,19 +43,27 @@ export const sendMessage = async (req, res) => {
 };
 
 export const getGroupMessages = async (req, res) => {
-    try {
-        const groupId = req.params.groupId;
-        const userId = req.user._id;
-        const group = await Group.findById(groupId);
-        if (!group) return response(res, true, "Group not found", 404);
+  try {
+    const groupId = req.params.groupId;
+    const userId = req.user._id;
 
-        if (!group.members.includes(userId)) {
-          return response(res, false, "You are not a member of this group", 403);
-        }
-
-        const messages = await Message.find({ groupId }).sort({ createdAt: 1 }); 
-        return response(res, true, "Messages fetched", 200);
-    } catch (error) {
-        handleError(res, error);
+    if (!groupId) {
+      return response(res, false, "Group ID is required", 400);
     }
-}
+
+    const group = await Group.findById(groupId);
+    if (!group) return response(res, false, "Group not found", 404);
+
+    if (!group.members.includes(userId)) {
+      return response(res, false, "You are not a member of this group", 403);
+    }
+
+    const messages = await Message.find({ groupId }).sort({ createdAt: 1 });
+
+    // Include the messages in the response
+    return response(res, true, "Messages fetched", 200, { messages });
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+

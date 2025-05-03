@@ -28,6 +28,9 @@ app.use(express.urlencoded({extended:true, limit:"10mb"}));
 
 app.use("/", routes);
 app.use("/api/file", fileUploadRoute);
-
+app.use((re, res, next) => {
+  req.io = io;
+  next();
+})
 
 export default app;
