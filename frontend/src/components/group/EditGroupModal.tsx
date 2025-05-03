@@ -1,49 +1,54 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-"use client";
-
-import { useState } from "react";
-import { Settings2 } from "lucide-react";
+import * as React from "react";
+import { Edit } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-
-interface EditGroupModalProps {
-  groupId: string;
-  currentName: string;
-  currentDescription: string;
-  onSave?: () => void;
-}
 
 export function EditGroupModal({
   groupId,
   currentName,
   currentDescription,
   onSave,
-}: EditGroupModalProps) {
-  const [name, setName] = useState(currentName);
-  const [description, setDescription] = useState(currentDescription);
-  const [isLoading, setIsLoading] = useState(false);
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [isLoading, setIsLoading] = React.useState(false);
 
-  const handleSaveChanges = async () => {
+  // Update state when props change
+  React.useEffect(() => {
+    setName(currentName);
+    setDescription(currentDescription);
+  }, [currentName, currentDescription]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+
     try {
-      setIsLoading(true);
       const response = await fetch(
         `http://localhost:5000/api/group/${groupId}`,
         {
           method: "PATCH",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            description,
+          }),
         }
       );
 
@@ -52,52 +57,83 @@ export function EditGroupModal({
         throw new Error(errorData.message || "Failed to update group");
       }
 
-      toast.success("Group updated successfully!");
-      if (onSave) onSave();
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save changes");
+      const data = await response.json();
+
+      // Emit the update through socket if possible
+      if (window.socket && typeof window.socket.emit === "function") {
+        window.socket.emit("updateGroup", {
+          groupId,
+          name,
+          description,
+        });
+      }
+
+      toast.success("Group updated successfully");
+      onSave && onSave(); // Call the onSave callback to refresh group details
+      setOpen(false);
+    } catch (error) {
+      console.error("Error updating group:", error);
+      toast.error(error.message || "Failed to update group");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="sm" className="rounded-full gap-1">
-          <Settings2 className="h-4 w-4" />
-          <span className="sr-only md:not-sr-only">Edit</span>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-full bg-blue-500/20 hover:bg-blue-500/30 border-none text-blue-500"
+        >
+          <Edit className="size-4" />
+          <span className="sr-only">Edit Group</span>
         </Button>
-      </SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Edit Group</SheetTitle>
-          <SheetDescription>Update your group details</SheetDescription>
-        </SheetHeader>
-        <div className="grid gap-4 py-4">
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Group</DialogTitle>
+          <DialogDescription>
+            Update your group name and description
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Group Name</Label>
+            <Label htmlFor="name">Name</Label>
             <Input
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="Group name"
+              required
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
-            <Input
+            <Textarea
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="Group description (optional)"
+              rows={3}
             />
           </div>
-        </div>
-        <SheetFooter>
-          <Button onClick={handleSaveChanges} disabled={isLoading}>
-            {isLoading ? "Saving..." : "Save changes"}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

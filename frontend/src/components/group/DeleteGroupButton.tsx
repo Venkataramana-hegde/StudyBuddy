@@ -1,88 +1,101 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import * as React from "react";
 import { Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
-export function DeleteGroupButton({ groupId }: { groupId: string }) {
-  const [isDeleting, setIsDeleting] = useState(false);
+export function DeleteGroupButton({ groupId }) {
   const router = useRouter();
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   const handleDelete = async () => {
+    if (!groupId) return;
+
     setIsDeleting(true);
 
     try {
-      const response = await fetch(`http://localhost:5000/api/group/${groupId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (response.status === 401) {
-        // Token might be expired - redirect to login
-        localStorage.removeItem("token");
-        toast.error("Session expired. Please login again");
-        router.push("/sign-in");
-        return;
-      }
+      const response = await fetch(
+        `http://localhost:5000/api/group/${groupId}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to delete group");
       }
 
-      const result = await response.json();
-      toast.success(result.message);
+      // Emit socket event for group deletion to notify all members
+      if (window.socket && typeof window.socket.emit === "function") {
+        window.socket.emit("deleteGroup", {
+          groupId,
+        });
+      }
+
+      toast.success("Group deleted successfully");
+
+      // Navigate to home page
       router.push("/");
-    } catch (error: any) {
-      console.error("Delete error:", error);
-      toast.error(error.message || "An error occurred while deleting");
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      toast.error(error.message || "Failed to delete group");
+      setIsOpen(false);
     } finally {
       setIsDeleting(false);
     }
   };
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      <AlertDialogTrigger asChild>
         <Button
-          variant="ghost"
-          size="sm"
-          className="rounded-full gap-1 text-red-600 hover:text-red-600 hover:bg-red-50"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 rounded-full bg-red-500/20 hover:bg-red-500/30 border-none text-red-500"
         >
-          <Trash2 className="h-4 w-4" />
-          <span className="sr-only md:not-sr-only">Delete</span>
+          <Trash2 className="size-4" />
+          <span className="sr-only">Delete Group</span>
         </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Confirm Group Deletion</DialogTitle>
-          <DialogDescription>
-            This will permanently delete the group and all its data. This action
-            cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="destructive"
-            onClick={handleDelete}
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete the group and all its messages for all
+            members. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              handleDelete();
+            }}
             disabled={isDeleting}
+            className="bg-red-500 hover:bg-red-600"
           >
             {isDeleting ? "Deleting..." : "Delete Group"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
