@@ -17,65 +17,96 @@ const io = new Server(server, {
 
 // SOCKET LOGIC STARTS
 // server.js
-io.on("connection", (socket) => {
-  console.log("New Client Connected: ", socket.id);
+// Add these socket.io event handlers to your backend
 
-  // Join group room when client connects
-  // Modified socket.on handler for server.js
+// In your socket.io setup file (where you've defined other socket events)
+
+io.on('connection', (socket) => {
+  // Existing handlers
   socket.on("joinGroup", (groupId) => {
     socket.join(groupId);
-    console.log(`Socket ${socket.id} joined group ${groupId}`);
+    console.log(`User joined group room: ${groupId}`);
   });
 
-
-  socket.on("sendGroupMessage", async (data, callback) => {
-    console.log("Received group message data:", data);
-
+  socket.on("sendGroupMessage", async (messageData, callback) => {
     try {
-      // Validate data
-      if (
-        !data ||
-        !data.groupId ||
-        !data.senderId ||
-        (data.message === undefined && data.content === undefined)
-      ) {
-        console.error("Invalid message data:", data);
-        if (callback)
-          callback({ success: false, error: "Invalid message data" });
-        return;
-      }
+      // Your existing code to save the message to MongoDB
+      const { groupId, senderId, message } = messageData;
 
-      const { groupId, senderId, message } = data;
-      const messageContent = message || data.content;
-
-      // 1. First save to database
-      const newMessage = await Message.create({
+      // Save message to MongoDB (your existing code)
+      const newMessage = new Message({
         groupId,
         senderId,
-        message: messageContent, // Consistent field naming
+        message,
       });
 
-      // Add a log to see what was created
-      console.log("Created new message:", newMessage);
+      await newMessage.save();
 
-      // 2. Then broadcast to room including the complete message object
-      const messageToSend = {
+      // Broadcast to all clients in the group including sender
+      io.to(groupId).emit("newGroupMessage", {
         _id: newMessage._id,
-        groupId: newMessage.groupId,
-        senderId: newMessage.senderId,
-        message: messageContent,
+        senderId,
+        message,
         createdAt: newMessage.createdAt,
-      };
+      });
 
-      console.log("Broadcasting message to group:", messageToSend);
-      io.to(groupId).emit("newGroupMessage", messageToSend);
-
-      // 3. Acknowledge receipt to sender
-      if (callback) callback({ success: true, messageId: newMessage._id });
+      // Send acknowledgement with message ID back to sender
+      if (typeof callback === "function") {
+        callback({ success: true, _id: newMessage._id });
+      }
     } catch (error) {
-      console.error("Error handling group message:", error);
-      if (callback) callback({ success: false, error: error.message });
+      console.error("Error sending group message:", error);
+      if (typeof callback === "function") {
+        callback({ success: false, error: error.message });
+      }
     }
+  });
+
+  // New event handlers for group updates and deletion
+  socket.on("updateGroup", async (data) => {
+    try {
+      const { groupId, name, description } = data;
+
+      // Optional: Update the group in the database here if not already done in API
+
+      // Broadcast the update to all users in the group
+      io.to(groupId).emit("groupUpdated", {
+        groupId,
+        name,
+        description,
+      });
+
+      console.log(`Group ${groupId} updated and broadcast to members`);
+    } catch (error) {
+      console.error("Error updating group via socket:", error);
+    }
+  });
+
+  // Update the group deletion event handler in server.js
+
+  socket.on("deleteGroup", async (data) => {
+    try {
+      const { groupId } = data;
+
+      // Optional: Additional backend cleanup if needed
+
+      // Broadcast deletion to all members
+      // Make sure to emit to the same event name that the client is listening for
+      io.to(groupId).emit("groupDeleted", {
+        groupId,
+      });
+
+      console.log(
+        `Group ${groupId} deletion broadcast to members with ID: ${groupId}`
+      );
+    } catch (error) {
+      console.error("Error handling group deletion via socket:", error);
+    }
+  });
+
+  // Disconnection handler
+  socket.on("disconnect", () => {
+    console.log("User disconnected");
   });
 });
 const PORT = process.env.PORT || 5000;

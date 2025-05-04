@@ -59,9 +59,10 @@ export function EditGroupModal({
 
       const data = await response.json();
 
-      // Emit the update through socket if possible
+      // Emit the update through socket if possible - CHANGED EVENT NAME TO MATCH LISTENER
       if (window.socket && typeof window.socket.emit === "function") {
         window.socket.emit("updateGroup", {
+          // Changed from "groupUpdated" to "updateGroup"
           groupId,
           name,
           description,

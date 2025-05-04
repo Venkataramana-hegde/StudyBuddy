@@ -16,11 +16,26 @@ import { InviteMemberModal } from "./InviteMemberModal";
 import { DeleteGroupButton } from "./DeleteGroupButton";
 import { LeaveGroupButton } from "./LeaveGroupModal";
 
+// At the top of your file, outside the component
 import io from "socket.io-client";
+
+// Create socket instance but don't connect right away
 const socket = io("http://localhost:5000", {
   withCredentials: true,
   autoConnect: false,
-}); // outside the component so it stays persistent
+});
+
+// Make socket globally available for other components
+if (typeof window !== 'undefined') {
+  window.socket = socket;
+}
+
+// Add this type declaration to avoid TypeScript errors
+declare global {
+  interface Window {
+    socket: any;
+  }
+}
 
 export default function GroupChat() {
   const params = useParams();
@@ -98,11 +113,17 @@ export default function GroupChat() {
   };
 
   // Inside your component
+  // Fix for GroupChat component
+  // Replace the socket event handler section in the React.useEffect where you're setting up the socket
+
   React.useEffect(() => {
     if (!groupId) return;
 
+    let isComponentMounted = true;
+
     const setupSocket = async () => {
       try {
+        // Fetch current user
         const res = await fetch("http://localhost:5000/api/auth/current-user", {
           credentials: "include",
         });
@@ -114,46 +135,219 @@ export default function GroupChat() {
         const user = await res.json();
         console.log("Fetched current user:", user);
         const userId = user.user.id;
+
+        if (!isComponentMounted) return;
+
         setCurrentUserId(userId);
 
         // Fetch messages after setting user ID
         await fetchMessages(groupId, userId);
 
-        // Only connect and emit after user is set
-        socket.connect();
+        if (!isComponentMounted) return;
+
+        // Only connect socket once
+        if (!socket.connected) {
+          console.log("Connecting socket...");
+          socket.connect();
+        }
+
+        // Join the group room
         socket.emit("joinGroup", groupId);
+        console.log("Joined group:", groupId);
 
-        // Debug socket connection
-        socket.on("connect", () => {
-          console.log("Socket connected with ID:", socket.id);
-        });
+        // Set up socket event handlers
+        const setupEventHandlers = () => {
+          // Debug connection
+          socket.on("connect", () => {
+            console.log("Socket connected with ID:", socket.id);
+          });
 
-        socket.on("connect_error", (err) => {
-          console.error("Socket connection error:", err);
-        });
+          socket.on("connect_error", (err) => {
+            console.error("Socket connection error:", err);
+          });
 
-        // Set up message handler
-        socket.on("newGroupMessage", (message) => {
-          console.log("Received message from socket:", message);
+          // Message handler
+          socket.on("newGroupMessage", (message) => {
+            console.log("Received message from socket:", message);
+            if (isComponentMounted) {
+              processIncomingMessage(message, userId);
+            }
+          });
 
-          // Handle the message processing
-          processIncomingMessage(message, userId);
-        });
+          // Group update handler
+          socket.on("groupUpdated", (data) => {
+            console.log("Group updated event received:", data);
+
+            if (isComponentMounted && data.groupId === groupId) {
+              setGroupName(data.name || "Unknown Name");
+              setDescription(data.description || "");
+              toast.success("Group details have been updated");
+            }
+          });
+
+          // Group deletion handler
+          socket.on("groupDeleted", (data) => {
+            console.log("Group deleted event received:", data);
+
+            if (isComponentMounted && data.groupId === groupId) {
+              toast.error("This group has been deleted.");
+
+              // Use a small timeout to allow the toast to show before redirecting
+              setTimeout(() => {
+                window.location.href = "/";
+              }, 1000);
+            }
+          });
+        };
+
+        // Clean up old handlers before adding new ones
+        socket.off("newGroupMessage");
+        socket.off("groupUpdated");
+        socket.off("groupDeleted");
+
+        // Set up new handlers
+        setupEventHandlers();
       } catch (err) {
         console.error("Setup error:", err);
-        toast.error("Failed to initialize chat");
+        if (isComponentMounted) {
+          toast.error("Failed to initialize chat");
+        }
       }
     };
 
     setupSocket();
 
+    // Cleanup function
     return () => {
+      isComponentMounted = false;
+
+      // Remove all listeners
       socket.off("newGroupMessage");
-      socket.disconnect();
+      socket.off("groupUpdated");
+      socket.off("groupDeleted");
+
+      // Note: We're not disconnecting socket here to allow it to persist
+      // between component mounts, which is what you want for a chat app
     };
   }, [groupId]);
 
   // Process incoming socket messages
+  // const processIncomingMessage = React.useCallback((message, userId) => {
+  //   if (!message) {
+  //     console.error("Received empty message object from socket");
+  //     return;
+  //   }
+
+  //   try {
+  //     // Extract message information
+  //     const messageId = message._id || Date.now().toString();
+  //     const senderId = message.senderId;
+
+  //     // Skip if this is a message we've already processed
+  //     if (sentMessagesRef.current.has(messageId)) {
+  //       console.log("Skipping already displayed message:", messageId);
+  //       return;
+  //     }
+
+  //     // Check if this might be a message we've already added locally (as the sender)
+  //     // This is especially important for our own messages that we've already displayed locally
+  //     if (senderId === userId) {
+  //       // Check if we have any local messages with matching content
+  //       setMessages((prev) => {
+  //         // Try to find a local message with the same content from the same sender
+  //         const localMessageIndex = prev.findIndex(
+  //           (msg) =>
+  //             msg.isLocalMessage &&
+  //             msg.senderId === senderId &&
+  //             msg.content ===
+  //               (message.message || message.content || message.text || "")
+  //         );
+
+  //         // If we found a matching local message, update it with server info instead of adding a duplicate
+  //         if (localMessageIndex >= 0) {
+  //           console.log(
+  //             "Found matching local message, updating instead of adding duplicate"
+  //           );
+  //           const updatedMessages = [...prev];
+  //           updatedMessages[localMessageIndex] = {
+  //             ...updatedMessages[localMessageIndex],
+  //             id: messageId,
+  //             isLocalMessage: false, // Mark as confirmed by server
+  //           };
+
+  //           // Add to our processed set to avoid future duplication
+  //           sentMessagesRef.current.add(messageId);
+
+  //           return updatedMessages;
+  //         }
+
+  //         // If no matching local message was found, proceed with adding the new message
+  //         console.log(
+  //           "No matching local message found, adding new message from socket"
+  //         );
+
+  //         // Extract content from whatever field it might be in
+  //         let messageContent = null;
+  //         if (typeof message === "string") {
+  //           messageContent = message;
+  //         } else {
+  //           messageContent =
+  //             message.message || message.content || message.text || "";
+  //         }
+
+  //         // Add to our processed set to avoid duplicates
+  //         sentMessagesRef.current.add(messageId);
+
+  //         return [
+  //           ...prev,
+  //           {
+  //             role: senderId === userId ? "user" : "agent",
+  //             content: messageContent,
+  //             id: messageId,
+  //             senderId: senderId,
+  //             isLocalMessage: false, // This comes from server
+  //           },
+  //         ];
+  //       });
+  //     } else {
+  //       // For messages from other users, just add them directly
+  //       // Extract content from whatever field it might be in
+  //       let messageContent = null;
+  //       if (typeof message === "string") {
+  //         messageContent = message;
+  //       } else {
+  //         messageContent =
+  //           message.message || message.content || message.text || "";
+  //       }
+
+  //       console.log("Processing message from another user:", {
+  //         messageId,
+  //         senderId,
+  //         content: messageContent,
+  //       });
+
+  //       // Add to the messages state
+  //       setMessages((prev) => [
+  //         ...prev,
+  //         {
+  //           role: "agent", // Always "agent" for other users
+  //           content: messageContent,
+  //           id: messageId,
+  //           senderId: senderId,
+  //           isLocalMessage: false,
+  //         },
+  //       ]);
+
+  //       // Add to our processed set to avoid duplicates
+  //       sentMessagesRef.current.add(messageId);
+  //     }
+  //   } catch (err) {
+  //     console.error("Error processing message:", err);
+  //   }
+  // }, []);
+
+  // Improved processIncomingMessage function to avoid duplicates
+
   const processIncomingMessage = React.useCallback((message, userId) => {
     if (!message) {
       console.error("Received empty message object from socket");
@@ -164,105 +358,61 @@ export default function GroupChat() {
       // Extract message information
       const messageId = message._id || Date.now().toString();
       const senderId = message.senderId;
+      const messageContent =
+        message.message || message.content || message.text || "";
 
-      // Skip if this is a message we've already processed
+      console.log("Processing incoming message:", {
+        messageId,
+        senderId,
+        content: messageContent,
+      });
+
+      // Skip if we've already processed this exact message ID
       if (sentMessagesRef.current.has(messageId)) {
-        console.log("Skipping already displayed message:", messageId);
+        console.log("Skipping already processed message ID:", messageId);
         return;
       }
 
-      // Check if this might be a message we've already added locally (as the sender)
-      // This is especially important for our own messages that we've already displayed locally
-      if (senderId === userId) {
-        // Check if we have any local messages with matching content
-        setMessages((prev) => {
-          // Try to find a local message with the same content from the same sender
-          const localMessageIndex = prev.findIndex(
-            (msg) =>
-              msg.isLocalMessage &&
+      // Add to our tracking set FIRST before any state updates
+      sentMessagesRef.current.add(messageId);
+
+      setMessages((prev) => {
+        // Check if we already have this message (by ID or possibly by a temp ID that matches content)
+        const existingMessageIndex = prev.findIndex(
+          (msg) =>
+            msg.id === messageId ||
+            (msg.isLocalMessage &&
               msg.senderId === senderId &&
-              msg.content ===
-                (message.message || message.content || message.text || "")
-          );
+              msg.content === messageContent)
+        );
 
-          // If we found a matching local message, update it with server info instead of adding a duplicate
-          if (localMessageIndex >= 0) {
-            console.log(
-              "Found matching local message, updating instead of adding duplicate"
-            );
-            const updatedMessages = [...prev];
-            updatedMessages[localMessageIndex] = {
-              ...updatedMessages[localMessageIndex],
-              id: messageId,
-              isLocalMessage: false, // Mark as confirmed by server
-            };
-
-            // Add to our processed set to avoid future duplication
-            sentMessagesRef.current.add(messageId);
-
-            return updatedMessages;
-          }
-
-          // If no matching local message was found, proceed with adding the new message
+        // If message already exists, update it instead of adding a new one
+        if (existingMessageIndex >= 0) {
           console.log(
-            "No matching local message found, adding new message from socket"
+            "Found existing message, updating instead of adding duplicate"
           );
-
-          // Extract content from whatever field it might be in
-          let messageContent = null;
-          if (typeof message === "string") {
-            messageContent = message;
-          } else {
-            messageContent =
-              message.message || message.content || message.text || "";
-          }
-
-          // Add to our processed set to avoid duplicates
-          sentMessagesRef.current.add(messageId);
-
-          return [
-            ...prev,
-            {
-              role: senderId === userId ? "user" : "agent",
-              content: messageContent,
-              id: messageId,
-              senderId: senderId,
-              isLocalMessage: false, // This comes from server
-            },
-          ];
-        });
-      } else {
-        // For messages from other users, just add them directly
-        // Extract content from whatever field it might be in
-        let messageContent = null;
-        if (typeof message === "string") {
-          messageContent = message;
-        } else {
-          messageContent =
-            message.message || message.content || message.text || "";
+          const updatedMessages = [...prev];
+          updatedMessages[existingMessageIndex] = {
+            ...updatedMessages[existingMessageIndex],
+            id: messageId, // Ensure it has the server ID
+            isLocalMessage: false, // Mark as confirmed by server
+          };
+          return updatedMessages;
         }
 
-        console.log("Processing message from another user:", {
-          messageId,
-          senderId,
-          content: messageContent,
-        });
-
-        // Add to the messages state
-        setMessages((prev) => [
+        // Otherwise, add as a new message
+        console.log("Adding new message from socket");
+        return [
           ...prev,
           {
-            role: "agent", // Always "agent" for other users
+            role: senderId === userId ? "user" : "agent",
             content: messageContent,
             id: messageId,
             senderId: senderId,
             isLocalMessage: false,
           },
-        ]);
-
-        // Add to our processed set to avoid duplicates
-        sentMessagesRef.current.add(messageId);
-      }
+        ];
+      });
     } catch (err) {
       console.error("Error processing message:", err);
     }
@@ -393,7 +543,7 @@ export default function GroupChat() {
             ) : (
               messages.map((message, index) => (
                 <div
-                  key={message.id || index}
+                  key={`${message.id}-${index}`} // Combine ID with index for guaranteed uniqueness
                   className={cn(
                     "flex",
                     message.role === "user" ? "justify-end" : "justify-start"
