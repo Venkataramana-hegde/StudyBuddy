@@ -15,14 +15,13 @@ const io = new Server(server, {
   },
 });
 
+// Make io available to the express app for use in controllers
+app.set("io", io);
+
 // SOCKET LOGIC STARTS
-// server.js
-// Add these socket.io event handlers to your backend
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
-// In your socket.io setup file (where you've defined other socket events)
-
-io.on('connection', (socket) => {
-  // Existing handlers
   socket.on("joinGroup", (groupId) => {
     socket.join(groupId);
     console.log(`User joined group room: ${groupId}`);
@@ -62,12 +61,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // New event handlers for group updates and deletion
+  // Group update event handler
   socket.on("updateGroup", async (data) => {
     try {
       const { groupId, name, description } = data;
-
-      // Optional: Update the group in the database here if not already done in API
 
       // Broadcast the update to all users in the group
       io.to(groupId).emit("groupUpdated", {
@@ -82,23 +79,19 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Update the group deletion event handler in server.js
-
+  // Group deletion event handler
   socket.on("deleteGroup", async (data) => {
     try {
       const { groupId } = data;
 
-      // Optional: Additional backend cleanup if needed
-
-      // Broadcast deletion to all members
-      // Make sure to emit to the same event name that the client is listening for
+      // Broadcast deletion to all members with clear message and redirect instruction
       io.to(groupId).emit("groupDeleted", {
         groupId,
+        message: "Group has been deleted by the admin",
+        redirectTo: "/",
       });
 
-      console.log(
-        `Group ${groupId} deletion broadcast to members with ID: ${groupId}`
-      );
+      console.log(`Group ${groupId} deletion broadcast to members`);
     } catch (error) {
       console.error("Error handling group deletion via socket:", error);
     }
@@ -106,9 +99,10 @@ io.on('connection', (socket) => {
 
   // Disconnection handler
   socket.on("disconnect", () => {
-    console.log("User disconnected");
+    console.log("User disconnected:", socket.id);
   });
 });
+
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {

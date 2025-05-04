@@ -61,13 +61,12 @@ export function EditGroupModal({
 
       // Emit the update through socket if possible - CHANGED EVENT NAME TO MATCH LISTENER
       if (window.socket && typeof window.socket.emit === "function") {
-        window.socket.emit("updateGroup", {
-          // Changed from "groupUpdated" to "updateGroup"
-          groupId,
-          name,
-          description,
-        });
-      }
+  window.socket.emit("updateGroup", {  // Changed from "groupUpdated" to "updateGroup"
+    groupId,
+    name,
+    description,
+  });
+}
 
       toast.success("Group updated successfully");
       onSave && onSave(); // Call the onSave callback to refresh group details

@@ -26,7 +26,7 @@ const socket = io("http://localhost:5000", {
 });
 
 // Make socket globally available for other components
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.socket = socket;
 }
 
@@ -44,6 +44,7 @@ export default function GroupChat() {
   const [groupName, setGroupName] = React.useState("Loading...");
   const [description, setDescription] = React.useState("");
   const [currentUserId, setCurrentUserId] = React.useState("");
+  const [groupMembers, setGroupMembers] = React.useState({});
 
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
@@ -71,6 +72,15 @@ export default function GroupChat() {
       if (data.success && data.data) {
         setGroupName(data.data.name || "Unknown Name");
         setDescription(data.data.description || "");
+
+        // If members are available in the API response, store them
+        if (data.data.members) {
+          const membersMap = {};
+          data.data.members.forEach((member) => {
+            membersMap[member.userId] = member.username || "Unknown User";
+          });
+          setGroupMembers(membersMap);
+        }
       } else {
         setGroupName("Unknown Group");
       }
@@ -78,6 +88,54 @@ export default function GroupChat() {
       console.error("Fetch error:", err);
       setGroupName("Error loading name");
       toast.error("Failed to load group details");
+    }
+  };
+
+  // Add this new function to fetch group members
+  const fetchGroupMembers = async () => {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/group/${groupId}`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch group members");
+      }
+
+      const data = await res.json();
+      console.log("Group members API response:", data);
+
+      if (data.success && data.data) {
+        const membersMap = {};
+
+        // Handle different response structures
+        if (Array.isArray(data.data)) {
+          // If data.data is an array
+          data.data.forEach((member) => {
+            membersMap[member.userId || member._id] =
+              member.username || member.name || "Unknown User";
+          });
+        } else if (typeof data.data === "object") {
+          // If data.data is an object with user IDs as keys
+          Object.keys(data.data).forEach((userId) => {
+            const member = data.data[userId];
+            membersMap[userId] =
+              member.username || member.name || "Unknown User";
+          });
+        } else {
+          console.error("Unexpected group members data structure:", data.data);
+        }
+
+        console.log("Processed members map:", membersMap);
+        setGroupMembers(membersMap);
+      }
+    } catch (err) {
+      console.error("Failed to fetch group members:", err);
     }
   };
 
@@ -99,12 +157,38 @@ export default function GroupChat() {
       const data = await res.json();
       if (data.success && data.data) {
         const messages = data.data || [];
-        const formatted = messages.map((msg) => ({
-          role: msg.senderId === userId ? "user" : "agent",
-          content: msg.message || msg.content || "",
-          id: msg._id || Date.now().toString(),
-          senderId: msg.senderId,
-        }));
+
+        // Process messages and extract sender information
+        const formatted = messages.map((msg) => {
+          // Update our members map if the message contains sender info
+          if (
+            msg.sender &&
+            msg.senderId &&
+            (msg.sender.username || msg.sender.name)
+          ) {
+            const senderName = msg.sender.username || msg.sender.name;
+            if (msg.senderId !== userId) {
+              // Don't override current user's name
+              setGroupMembers((prev) => ({
+                ...prev,
+                [msg.senderId]: senderName,
+              }));
+            }
+          }
+
+          return {
+            role: msg.senderId === userId ? "user" : "agent",
+            content: msg.message || msg.content || "",
+            id: msg._id || Date.now().toString(),
+            senderId: msg.senderId,
+            // Always use "You" for current user's messages
+            senderName:
+              msg.senderId === userId
+                ? "You"
+                : groupMembers[msg.senderId] || "Unknown User",
+          };
+        });
+
         setMessages(formatted);
       }
     } catch (err) {
@@ -134,13 +218,36 @@ export default function GroupChat() {
 
         const user = await res.json();
         console.log("Fetched current user:", user);
-        const userId = user.user.id;
+
+        // Handle different user response structures
+        const userId = user.user?.id || user.userId || user._id || user.id;
+        if (!userId) {
+          console.error("Could not determine user ID from response:", user);
+          toast.error("Failed to get user information");
+          return;
+        }
 
         if (!isComponentMounted) return;
 
         setCurrentUserId(userId);
 
-        // Fetch messages after setting user ID
+        // Set your own username in the members map right away
+        setGroupMembers((prev) => ({
+          ...prev,
+          [userId]: user.user?.username || user.username || user.name || "You",
+        }));
+
+        // Fetch group members first
+        try {
+          await fetchGroupMembers();
+        } catch (err) {
+          console.error("Error fetching group members:", err);
+          // Continue execution even if members fetch fails
+        }
+
+        if (!isComponentMounted) return;
+
+        // Fetch messages after setting user ID and getting members
         await fetchMessages(groupId, userId);
 
         if (!isComponentMounted) return;
@@ -181,7 +288,22 @@ export default function GroupChat() {
             if (isComponentMounted && data.groupId === groupId) {
               setGroupName(data.name || "Unknown Name");
               setDescription(data.description || "");
+              // Re-fetch members if group is updated
+              fetchGroupMembers();
               toast.success("Group details have been updated");
+            }
+          });
+
+          // Member joined handler
+          socket.on("memberJoined", (data) => {
+            console.log("Member joined event received:", data);
+
+            if (isComponentMounted && data.groupId === groupId) {
+              // Update members list
+              fetchGroupMembers();
+              toast.success(
+                `${data.username || "A new user"} has joined the group`
+              );
             }
           });
 
@@ -190,12 +312,15 @@ export default function GroupChat() {
             console.log("Group deleted event received:", data);
 
             if (isComponentMounted && data.groupId === groupId) {
-              toast.error("This group has been deleted.");
+              // Show toast with message from server if available
+              toast.error(
+                data.message || "This group has been deleted by the admin"
+              );
 
               // Use a small timeout to allow the toast to show before redirecting
               setTimeout(() => {
-                window.location.href = "/";
-              }, 1000);
+                window.location.href = data.redirectTo || "/";
+              }, 1500);
             }
           });
         };
@@ -203,6 +328,7 @@ export default function GroupChat() {
         // Clean up old handlers before adding new ones
         socket.off("newGroupMessage");
         socket.off("groupUpdated");
+        socket.off("memberJoined");
         socket.off("groupDeleted");
 
         // Set up new handlers
@@ -224,6 +350,7 @@ export default function GroupChat() {
       // Remove all listeners
       socket.off("newGroupMessage");
       socket.off("groupUpdated");
+      socket.off("memberJoined");
       socket.off("groupDeleted");
 
       // Note: We're not disconnecting socket here to allow it to persist
@@ -232,191 +359,104 @@ export default function GroupChat() {
   }, [groupId]);
 
   // Process incoming socket messages
-  // const processIncomingMessage = React.useCallback((message, userId) => {
-  //   if (!message) {
-  //     console.error("Received empty message object from socket");
-  //     return;
-  //   }
-
-  //   try {
-  //     // Extract message information
-  //     const messageId = message._id || Date.now().toString();
-  //     const senderId = message.senderId;
-
-  //     // Skip if this is a message we've already processed
-  //     if (sentMessagesRef.current.has(messageId)) {
-  //       console.log("Skipping already displayed message:", messageId);
-  //       return;
-  //     }
-
-  //     // Check if this might be a message we've already added locally (as the sender)
-  //     // This is especially important for our own messages that we've already displayed locally
-  //     if (senderId === userId) {
-  //       // Check if we have any local messages with matching content
-  //       setMessages((prev) => {
-  //         // Try to find a local message with the same content from the same sender
-  //         const localMessageIndex = prev.findIndex(
-  //           (msg) =>
-  //             msg.isLocalMessage &&
-  //             msg.senderId === senderId &&
-  //             msg.content ===
-  //               (message.message || message.content || message.text || "")
-  //         );
-
-  //         // If we found a matching local message, update it with server info instead of adding a duplicate
-  //         if (localMessageIndex >= 0) {
-  //           console.log(
-  //             "Found matching local message, updating instead of adding duplicate"
-  //           );
-  //           const updatedMessages = [...prev];
-  //           updatedMessages[localMessageIndex] = {
-  //             ...updatedMessages[localMessageIndex],
-  //             id: messageId,
-  //             isLocalMessage: false, // Mark as confirmed by server
-  //           };
-
-  //           // Add to our processed set to avoid future duplication
-  //           sentMessagesRef.current.add(messageId);
-
-  //           return updatedMessages;
-  //         }
-
-  //         // If no matching local message was found, proceed with adding the new message
-  //         console.log(
-  //           "No matching local message found, adding new message from socket"
-  //         );
-
-  //         // Extract content from whatever field it might be in
-  //         let messageContent = null;
-  //         if (typeof message === "string") {
-  //           messageContent = message;
-  //         } else {
-  //           messageContent =
-  //             message.message || message.content || message.text || "";
-  //         }
-
-  //         // Add to our processed set to avoid duplicates
-  //         sentMessagesRef.current.add(messageId);
-
-  //         return [
-  //           ...prev,
-  //           {
-  //             role: senderId === userId ? "user" : "agent",
-  //             content: messageContent,
-  //             id: messageId,
-  //             senderId: senderId,
-  //             isLocalMessage: false, // This comes from server
-  //           },
-  //         ];
-  //       });
-  //     } else {
-  //       // For messages from other users, just add them directly
-  //       // Extract content from whatever field it might be in
-  //       let messageContent = null;
-  //       if (typeof message === "string") {
-  //         messageContent = message;
-  //       } else {
-  //         messageContent =
-  //           message.message || message.content || message.text || "";
-  //       }
-
-  //       console.log("Processing message from another user:", {
-  //         messageId,
-  //         senderId,
-  //         content: messageContent,
-  //       });
-
-  //       // Add to the messages state
-  //       setMessages((prev) => [
-  //         ...prev,
-  //         {
-  //           role: "agent", // Always "agent" for other users
-  //           content: messageContent,
-  //           id: messageId,
-  //           senderId: senderId,
-  //           isLocalMessage: false,
-  //         },
-  //       ]);
-
-  //       // Add to our processed set to avoid duplicates
-  //       sentMessagesRef.current.add(messageId);
-  //     }
-  //   } catch (err) {
-  //     console.error("Error processing message:", err);
-  //   }
-  // }, []);
-
-  // Improved processIncomingMessage function to avoid duplicates
-
-  const processIncomingMessage = React.useCallback((message, userId) => {
-    if (!message) {
-      console.error("Received empty message object from socket");
-      return;
-    }
-
-    try {
-      // Extract message information
-      const messageId = message._id || Date.now().toString();
-      const senderId = message.senderId;
-      const messageContent =
-        message.message || message.content || message.text || "";
-
-      console.log("Processing incoming message:", {
-        messageId,
-        senderId,
-        content: messageContent,
-      });
-
-      // Skip if we've already processed this exact message ID
-      if (sentMessagesRef.current.has(messageId)) {
-        console.log("Skipping already processed message ID:", messageId);
+  const processIncomingMessage = React.useCallback(
+    (message, userId) => {
+      if (!message) {
+        console.error("Received empty message object from socket");
         return;
       }
 
-      // Add to our tracking set FIRST before any state updates
-      sentMessagesRef.current.add(messageId);
+      try {
+        // Extract message information
+        const messageId = message._id || Date.now().toString();
+        const senderId = message.senderId;
+        const messageContent =
+          message.message || message.content || message.text || "";
 
-      setMessages((prev) => {
-        // Check if we already have this message (by ID or possibly by a temp ID that matches content)
-        const existingMessageIndex = prev.findIndex(
-          (msg) =>
-            msg.id === messageId ||
-            (msg.isLocalMessage &&
-              msg.senderId === senderId &&
-              msg.content === messageContent)
-        );
+        // For messages from the current user, always use "You"
+        let senderName = "Unknown User";
+        if (senderId === userId) {
+          senderName = "You";
+        } else {
+          // Try to get sender name from members map, fetch user info if not found
+          senderName = groupMembers[senderId] || "Unknown User";
 
-        // If message already exists, update it instead of adding a new one
-        if (existingMessageIndex >= 0) {
-          console.log(
-            "Found existing message, updating instead of adding duplicate"
-          );
-          const updatedMessages = [...prev];
-          updatedMessages[existingMessageIndex] = {
-            ...updatedMessages[existingMessageIndex],
-            id: messageId, // Ensure it has the server ID
-            isLocalMessage: false, // Mark as confirmed by server
-          };
-          return updatedMessages;
+          // If we don't have this user's info, try to update our members map
+          if (senderName === "Unknown User" && message.sender) {
+            // Some APIs include sender info directly in the message
+            const senderInfo = message.sender;
+            if (senderInfo.username || senderInfo.name) {
+              const newName = senderInfo.username || senderInfo.name;
+              setGroupMembers((prev) => ({
+                ...prev,
+                [senderId]: newName,
+              }));
+              senderName = newName;
+            }
+          }
         }
 
-        // Otherwise, add as a new message
-        console.log("Adding new message from socket");
-        return [
-          ...prev,
-          {
-            role: senderId === userId ? "user" : "agent",
-            content: messageContent,
-            id: messageId,
-            senderId: senderId,
-            isLocalMessage: false,
-          },
-        ];
-      });
-    } catch (err) {
-      console.error("Error processing message:", err);
-    }
-  }, []);
+        console.log("Processing incoming message:", {
+          messageId,
+          senderId,
+          senderName,
+          content: messageContent,
+        });
+
+        // Skip if we've already processed this exact message ID
+        if (sentMessagesRef.current.has(messageId)) {
+          console.log("Skipping already processed message ID:", messageId);
+          return;
+        }
+
+        // Add to our tracking set FIRST before any state updates
+        sentMessagesRef.current.add(messageId);
+
+        setMessages((prev) => {
+          // Check if we already have this message (by ID or possibly by a temp ID that matches content)
+          const existingMessageIndex = prev.findIndex(
+            (msg) =>
+              msg.id === messageId ||
+              (msg.isLocalMessage &&
+                msg.senderId === senderId &&
+                msg.content === messageContent)
+          );
+
+          // If message already exists, update it instead of adding a new one
+          if (existingMessageIndex >= 0) {
+            console.log(
+              "Found existing message, updating instead of adding duplicate"
+            );
+            const updatedMessages = [...prev];
+            updatedMessages[existingMessageIndex] = {
+              ...updatedMessages[existingMessageIndex],
+              id: messageId, // Ensure it has the server ID
+              isLocalMessage: false, // Mark as confirmed by server
+              senderName: senderName, // Add sender name
+            };
+            return updatedMessages;
+          }
+
+          // Otherwise, add as a new message
+          console.log("Adding new message from socket");
+          return [
+            ...prev,
+            {
+              role: senderId === userId ? "user" : "agent",
+              content: messageContent,
+              id: messageId,
+              senderId: senderId,
+              senderName: senderName,
+              isLocalMessage: false,
+            },
+          ];
+        });
+      } catch (err) {
+        console.error("Error processing message:", err);
+      }
+    },
+    [groupMembers]
+  );
 
   React.useEffect(() => {
     if (groupId) {
@@ -445,11 +485,24 @@ export default function GroupChat() {
 
     // Create a temporary ID for local message
     const tempId = `temp-${Date.now()}`;
+
+    // Always use "You" for current user's messages in the UI
+    const senderName = "You";
+
+    // Make sure we have our user ID in the members map
+    if (!groupMembers[currentUserId]) {
+      setGroupMembers((prev) => ({
+        ...prev,
+        [currentUserId]: "You",
+      }));
+    }
+
     const localMessage = {
       role: "user",
       content: messageContent,
       id: tempId,
       senderId: currentUserId,
+      senderName: senderName,
       // Flag this as a local message that we've added manually
       isLocalMessage: true,
     };
@@ -490,6 +543,19 @@ export default function GroupChat() {
         sentMessagesRef.current.delete(tempId);
       }
     });
+  };
+
+  // Helper function to generate initials from name
+  const getInitials = (name) => {
+    if (!name || name === "Unknown User") return "?";
+    return (
+      name
+        .split(" ")
+        .map((n) => (n && n[0] ? n[0] : ""))
+        .join("")
+        .toUpperCase()
+        .substring(0, 2) || "?"
+    );
   };
 
   return (
@@ -545,19 +611,47 @@ export default function GroupChat() {
                 <div
                   key={`${message.id}-${index}`} // Combine ID with index for guaranteed uniqueness
                   className={cn(
-                    "flex",
-                    message.role === "user" ? "justify-end" : "justify-start"
+                    "flex flex-col",
+                    message.role === "user" ? "items-end" : "items-start"
                   )}
                 >
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
-                      message.role === "user"
-                        ? "bg-blue-600 text-blue-50 rounded-tr-none"
-                        : "bg-slate-800 text-slate-100 rounded-tl-none"
+                  {/* Sender name */}
+                  <div className="px-2 mb-1 text-xs text-slate-400">
+                    {message.role === "user"
+                      ? "You"
+                      : message.senderName || "Unknown User"}
+                  </div>
+
+                  {/* Message bubble with avatar for others */}
+                  <div className="flex items-end gap-2">
+                    {message.role !== "user" && (
+                      <Avatar className="h-6 w-6 bg-slate-700">
+                        <AvatarFallback className="text-[10px]">
+                          {message.senderName === "Unknown User"
+                            ? "?"
+                            : getInitials(message.senderName)}
+                        </AvatarFallback>
+                      </Avatar>
                     )}
-                  >
-                    {message.content || ""}
+
+                    <div
+                      className={cn(
+                        "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
+                        message.role === "user"
+                          ? "bg-blue-600 text-blue-50 rounded-tr-none"
+                          : "bg-slate-800 text-slate-100 rounded-tl-none"
+                      )}
+                    >
+                      {message.content || ""}
+                    </div>
+
+                    {message.role === "user" && (
+                      <Avatar className="h-6 w-6 bg-blue-700">
+                        <AvatarFallback className="text-[10px] bg-blue-600">
+                          YOU
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                   </div>
                 </div>
               ))

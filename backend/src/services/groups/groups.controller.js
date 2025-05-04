@@ -150,13 +150,29 @@ export const leaveGroup = async (req, res) => {
         message: "You are not a member of this group",
       });
     }
-    if(group.createdBy.toString() === userId.toString()){
+
+    // If user is the creator/admin, delete the group and notify all members
+    if (group.createdBy.toString() === userId.toString()) {
       await Group.deleteOne({ _id: groupId });
+
+      // Access the io instance to emit socket event
+      // This requires io to be accessible - see implementation notes below
+      if (req.app.get("io")) {
+        const io = req.app.get("io");
+        io.to(groupId).emit("groupDeleted", {
+          groupId,
+          message: "Group has been deleted by the admin",
+          redirectTo: "/",
+        });
+      }
+
       return res.status(200).json({
         success: true,
         message: "Group deleted successfully",
       });
     }
+
+    // If regular member, just remove them from the group
     group.members.pull(userId);
     await group.save();
 
