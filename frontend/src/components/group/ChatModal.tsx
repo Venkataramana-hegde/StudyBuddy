@@ -16,6 +16,10 @@ import { InviteMemberModal } from "./InviteMemberModal";
 import { DeleteGroupButton } from "./DeleteGroupButton";
 import { LeaveGroupButton } from "./LeaveGroupModal";
 
+import { BsFiletypeGif } from "react-icons/bs";
+import EmojiPicker from "emoji-picker-react";
+import Image from "next/image";
+
 // At the top of your file, outside the component
 import io from "socket.io-client";
 
@@ -50,6 +54,13 @@ export default function GroupChat() {
   const [input, setInput] = React.useState("");
   const inputLength = input.trim().length;
   const messagesEndRef = React.useRef(null);
+
+  // Emoji and GIF states
+  const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
+  const [showGifPicker, setShowGifPicker] = React.useState(false);
+  const [gifSearchTerm, setGifSearchTerm] = React.useState("");
+  const [gifs, setGifs] = React.useState([]);
+  const tenorApiKey = process.env.NEXT_PUBLIC_TENOR_API_KEY;
 
   // Add a ref to track sent messages to avoid duplicates
   const sentMessagesRef = React.useRef(new Set());
@@ -94,14 +105,11 @@ export default function GroupChat() {
   // Add this new function to fetch group members
   const fetchGroupMembers = async () => {
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/group/${groupId}`,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      const res = await fetch(`http://localhost:5000/api/group/${groupId}`, {
+        method: "GET",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (!res.ok) {
         throw new Error("Failed to fetch group members");
@@ -155,6 +163,7 @@ export default function GroupChat() {
       }
 
       const data = await res.json();
+      console.log("Fetched messages", data);
       if (data.success && data.data) {
         const messages = data.data || [];
 
@@ -176,9 +185,24 @@ export default function GroupChat() {
             }
           }
 
+          // Check if this is a GIF message
+          const isGif =
+            msg.messageType === "gif" ||
+            (msg.message && msg.message.startsWith("!GIF:"));
+          let gifUrl = null;
+          let messageContent = msg.message || msg.content || "";
+
+          if (isGif) {
+            // Extract GIF URL from message content
+            if (messageContent.startsWith("!GIF:")) {
+              gifUrl = messageContent.substring(5); // Remove the !GIF: prefix
+              messageContent = ""; // Clear text content since it's just a GIF
+            }
+          }
+
           return {
             role: msg.senderId === userId ? "user" : "agent",
-            content: msg.message || msg.content || "",
+            content: messageContent,
             id: msg._id || Date.now().toString(),
             senderId: msg.senderId,
             // Always use "You" for current user's messages
@@ -186,6 +210,9 @@ export default function GroupChat() {
               msg.senderId === userId
                 ? "You"
                 : groupMembers[msg.senderId] || "Unknown User",
+            isGif: isGif,
+            gifUrl: gifUrl,
+            messageType: msg.messageType || "text",
           };
         });
 
@@ -372,6 +399,21 @@ export default function GroupChat() {
         const senderId = message.senderId;
         const messageContent =
           message.message || message.content || message.text || "";
+        const messageType = message.messageType || "text";
+
+        // Check if this is a GIF message
+        const isGif =
+          messageType === "gif" || messageContent.startsWith("!GIF:");
+        let gifUrl = null;
+        let content = messageContent;
+
+        if (isGif) {
+          // Extract GIF URL from message content
+          if (messageContent.startsWith("!GIF:")) {
+            gifUrl = messageContent.substring(5); // Remove the !GIF: prefix
+            content = ""; // Clear text content since it's just a GIF
+          }
+        }
 
         // For messages from the current user, always use "You"
         let senderName = "Unknown User";
@@ -400,7 +442,10 @@ export default function GroupChat() {
           messageId,
           senderId,
           senderName,
-          content: messageContent,
+          content,
+          messageType,
+          isGif,
+          gifUrl,
         });
 
         // Skip if we've already processed this exact message ID
@@ -419,7 +464,7 @@ export default function GroupChat() {
               msg.id === messageId ||
               (msg.isLocalMessage &&
                 msg.senderId === senderId &&
-                msg.content === messageContent)
+                msg.content === content)
           );
 
           // If message already exists, update it instead of adding a new one
@@ -433,6 +478,9 @@ export default function GroupChat() {
               id: messageId, // Ensure it has the server ID
               isLocalMessage: false, // Mark as confirmed by server
               senderName: senderName, // Add sender name
+              messageType: messageType,
+              isGif: isGif,
+              gifUrl: gifUrl,
             };
             return updatedMessages;
           }
@@ -443,11 +491,14 @@ export default function GroupChat() {
             ...prev,
             {
               role: senderId === userId ? "user" : "agent",
-              content: messageContent,
+              content: content,
               id: messageId,
               senderId: senderId,
               senderName: senderName,
               isLocalMessage: false,
+              messageType: messageType,
+              isGif: isGif,
+              gifUrl: gifUrl,
             },
           ];
         });
@@ -469,19 +520,46 @@ export default function GroupChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSendMessage = (event) => {
-    event.preventDefault();
+  // Function to search for GIFs
+  const searchGifs = async (searchTerm = "") => {
+    try {
+      const searchQuery = searchTerm || "trending";
+      const limit = 20;
 
-    if (!input.trim() || !currentUserId) {
-      console.warn("Form submit blocked: missing input or currentUserId");
+      const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(
+        searchQuery
+      )}&key=${tenorApiKey}&client_key=my_app&limit=${limit}`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("Failed to fetch GIFs");
+      }
+
+      const data = await response.json();
+      setGifs(data.results || []);
+    } catch (error) {
+      console.error("Error fetching GIFs:", error);
+      toast.error("Failed to load GIFs");
+    }
+  };
+
+  // Handle adding emoji to the input
+  const handleEmojiSelect = (emojiObject) => {
+    setInput((prevInput) => prevInput + emojiObject.emoji);
+  };
+
+  // Handle selecting a GIF
+  const handleGifSelect = (gifUrl) => {
+    sendMessage(`!GIF:${gifUrl}`, "gif");
+    setShowGifPicker(false);
+  };
+
+  // Generic send message function to handle both text and GIFs
+  const sendMessage = (messageContent, messageType = "text") => {
+    if (!messageContent.trim() || !currentUserId) {
+      console.warn("Send blocked: missing content or currentUserId");
       return;
     }
-
-    // Store message content before clearing input
-    const messageContent = input;
-
-    // Clear input field immediately for better UX
-    setInput("");
 
     // Create a temporary ID for local message
     const tempId = `temp-${Date.now()}`;
@@ -497,14 +575,26 @@ export default function GroupChat() {
       }));
     }
 
+    // Check if it's a GIF message
+    const isGif = messageType === "gif";
+    let content = messageContent;
+    let gifUrl = null;
+
+    if (isGif && messageContent.startsWith("!GIF:")) {
+      gifUrl = messageContent.substring(5);
+      content = ""; // Clear content for GIFs
+    }
+
     const localMessage = {
       role: "user",
-      content: messageContent,
+      content: content,
       id: tempId,
       senderId: currentUserId,
       senderName: senderName,
-      // Flag this as a local message that we've added manually
       isLocalMessage: true,
+      messageType: messageType,
+      isGif: isGif,
+      gifUrl: gifUrl,
     };
 
     // Add message locally first for immediate feedback
@@ -518,6 +608,7 @@ export default function GroupChat() {
       groupId,
       senderId: currentUserId,
       message: messageContent,
+      messageType: messageType,
     };
 
     // Emit to the server via socket
@@ -543,6 +634,24 @@ export default function GroupChat() {
         sentMessagesRef.current.delete(tempId);
       }
     });
+  };
+
+  const handleSendMessage = (event) => {
+    event.preventDefault();
+
+    if (input.trim()) {
+      sendMessage(input);
+      setInput(""); // Clear input field immediately for better UX
+    }
+  };
+
+  // Show GIF picker and search for trending GIFs initially
+  const handleGifClick = () => {
+    if (!showGifPicker) {
+      searchGifs(); // Search for trending GIFs when opening the picker
+    }
+    setShowGifPicker(!showGifPicker);
+    setShowEmojiPicker(false); // Close emoji picker if open
   };
 
   // Helper function to generate initials from name
@@ -642,7 +751,17 @@ export default function GroupChat() {
                           : "bg-slate-800 text-slate-100 rounded-tl-none"
                       )}
                     >
-                      {message.content || ""}
+                      {message.isGif && message.gifUrl ? (
+                        <div className="w-full max-w-[250px]">
+                          <img
+                            src={message.gifUrl}
+                            alt="GIF"
+                            className="rounded-lg w-full h-auto"
+                          />
+                        </div>
+                      ) : (
+                        message.content || ""
+                      )}
                     </div>
 
                     {message.role === "user" && (
@@ -660,6 +779,66 @@ export default function GroupChat() {
           </div>
         </div>
 
+        {/* GIF Picker Component */}
+        {showGifPicker && (
+          <div className="w-full px-4 py-2 border-t border-slate-800 bg-slate-900">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Search for GIFs..."
+                    value={gifSearchTerm}
+                    onChange={(e) => setGifSearchTerm(e.target.value)}
+                    className="bg-slate-800 border-slate-700 text-slate-100"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        searchGifs(gifSearchTerm);
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={() => searchGifs(gifSearchTerm)}
+                    className="bg-blue-600 hover:bg-blue-500"
+                    size="sm"
+                  >
+                    Search
+                  </Button>
+                  <Button
+                    onClick={() => setShowGifPicker(false)}
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-700 text-slate-100"
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 max-h-52 overflow-y-auto">
+                  {gifs.map((gif, index) => (
+                    <div
+                      key={index}
+                      className="cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => handleGifSelect(gif.media_formats.gif.url)}
+                    >
+                      <img
+                        src={gif.media_formats.tinygif.url}
+                        alt={gif.content_description || "GIF"}
+                        className="rounded-md w-full h-auto"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {gifs.length === 0 && (
+                  <div className="text-center text-slate-400 py-4">
+                    No GIFs found. Try another search!
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Input area - Fixed at bottom */}
         <div className="p-4 border-t border-slate-800 bg-slate-900">
           <div className="max-w-4xl mx-auto">
@@ -667,6 +846,28 @@ export default function GroupChat() {
               onSubmit={handleSendMessage}
               className="flex items-center space-x-2"
             >
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmojiPicker(!showEmojiPicker);
+                  setShowGifPicker(false); // Close GIF picker if open
+                }}
+                className="text-xl p-2 hover:bg-slate-800 rounded-full transition"
+              >
+                😄
+              </button>
+
+              {showEmojiPicker && (
+                <div className="absolute bottom-16 z-50">
+                  <EmojiPicker
+                    onEmojiClick={(emojiData) => {
+                      handleEmojiSelect(emojiData);
+                    }}
+                    theme="dark"
+                  />
+                </div>
+              )}
+
               <Input
                 id="message"
                 placeholder="Type your message..."
@@ -675,6 +876,15 @@ export default function GroupChat() {
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
               />
+
+              <button
+                type="button"
+                onClick={handleGifClick}
+                className="text-xl p-2 hover:bg-slate-800 rounded-full transition"
+              >
+                <BsFiletypeGif />
+              </button>
+
               <Button
                 type="submit"
                 size="icon"
