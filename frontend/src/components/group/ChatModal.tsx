@@ -5,21 +5,15 @@ import * as React from "react";
 import { Send } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useParams } from "next/navigation";
 
-import { EditGroupModal } from "./EditGroupModal";
-import { InviteMemberModal } from "./InviteMemberModal";
-import { DeleteGroupButton } from "./DeleteGroupButton";
-import { LeaveGroupButton } from "./LeaveGroupModal";
+import { EmojiGifPicker } from "./EmojiGifPicker";
 
-import { BsFiletypeGif } from "react-icons/bs";
-import EmojiPicker from "emoji-picker-react";
-import Image from "next/image";
-
+//NavOptions
+import { NavOptions } from "./NavOptions";
 // At the top of your file, outside the component
 import io from "socket.io-client";
 
@@ -48,19 +42,13 @@ export default function GroupChat() {
   const [groupName, setGroupName] = React.useState("Loading...");
   const [description, setDescription] = React.useState("");
   const [currentUserId, setCurrentUserId] = React.useState("");
+  const [currentUserName, setCurrentUserName] = React.useState("");
   const [groupMembers, setGroupMembers] = React.useState({});
 
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
   const inputLength = input.trim().length;
   const messagesEndRef = React.useRef(null);
-
-  // Emoji and GIF states
-  const [showEmojiPicker, setShowEmojiPicker] = React.useState(false);
-  const [showGifPicker, setShowGifPicker] = React.useState(false);
-  const [gifSearchTerm, setGifSearchTerm] = React.useState("");
-  const [gifs, setGifs] = React.useState([]);
-  const tenorApiKey = process.env.NEXT_PUBLIC_TENOR_API_KEY;
 
   // Add a ref to track sent messages to avoid duplicates
   const sentMessagesRef = React.useRef(new Set());
@@ -258,10 +246,15 @@ export default function GroupChat() {
 
         setCurrentUserId(userId);
 
+        // Get and store the current user's username
+        const username =
+          user.user?.username || user.username || user.name || "You";
+        setCurrentUserName(username);
+
         // Set your own username in the members map right away
         setGroupMembers((prev) => ({
           ...prev,
-          [userId]: user.user?.username || user.username || user.name || "You",
+          [userId]: username,
         }));
 
         // Fetch group members first
@@ -520,38 +513,13 @@ export default function GroupChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Function to search for GIFs
-  const searchGifs = async (searchTerm = "") => {
-    try {
-      const searchQuery = searchTerm || "trending";
-      const limit = 20;
-
-      const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(
-        searchQuery
-      )}&key=${tenorApiKey}&client_key=my_app&limit=${limit}`;
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error("Failed to fetch GIFs");
-      }
-
-      const data = await response.json();
-      setGifs(data.results || []);
-    } catch (error) {
-      console.error("Error fetching GIFs:", error);
-      toast.error("Failed to load GIFs");
-    }
+  //Hnalde selecting an emoji
+  const handleEmojiSelect = (emoji) => {
+    setInput((prevInput) => prevInput + emoji);
   };
 
-  // Handle adding emoji to the input
-  const handleEmojiSelect = (emojiObject) => {
-    setInput((prevInput) => prevInput + emojiObject.emoji);
-  };
-
-  // Handle selecting a GIF
   const handleGifSelect = (gifUrl) => {
     sendMessage(`!GIF:${gifUrl}`, "gif");
-    setShowGifPicker(false);
   };
 
   // Generic send message function to handle both text and GIFs
@@ -571,7 +539,7 @@ export default function GroupChat() {
     if (!groupMembers[currentUserId]) {
       setGroupMembers((prev) => ({
         ...prev,
-        [currentUserId]: "You",
+        [currentUserId]: currentUserName || "You",
       }));
     }
 
@@ -609,6 +577,7 @@ export default function GroupChat() {
       senderId: currentUserId,
       message: messageContent,
       messageType: messageType,
+      senderName: currentUserName, // Add the sender's username to the payload
     };
 
     // Emit to the server via socket
@@ -645,38 +614,14 @@ export default function GroupChat() {
     }
   };
 
-  // Show GIF picker and search for trending GIFs initially
-  const handleGifClick = () => {
-    if (!showGifPicker) {
-      searchGifs(); // Search for trending GIFs when opening the picker
-    }
-    setShowGifPicker(!showGifPicker);
-    setShowEmojiPicker(false); // Close emoji picker if open
-  };
-
-  // Helper function to generate initials from name
-  const getInitials = (name) => {
-    if (!name || name === "Unknown User") return "?";
-    return (
-      name
-        .split(" ")
-        .map((n) => (n && n[0] ? n[0] : ""))
-        .join("")
-        .toUpperCase()
-        .substring(0, 2) || "?"
-    );
-  };
-
   return (
     <div className="flex flex-col h-screen w-full bg-slate-950 text-white">
       {/* Header - Fixed at top */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950">
         <div className="flex items-center space-x-4">
-          <Avatar className="h-10 w-10 bg-slate-800">
-            <AvatarFallback className="bg-slate-700 text-slate-200">
-              GC
-            </AvatarFallback>
-          </Avatar>
+          <div className="h-10 w-10 bg-slate-700 rounded-full flex items-center justify-center text-slate-200">
+            GC
+          </div>
           <div className="text-lg font-semibold">
             {groupName === "Loading..." ? (
               <span>Loading...</span>
@@ -687,23 +632,13 @@ export default function GroupChat() {
             )}
           </div>
         </div>
-
-        <div className="flex items-center gap-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border rounded-full p-1 shadow-sm">
-          {/* Edit Group Sheet */}
-          <EditGroupModal
-            groupId={groupId}
-            currentName={groupName}
-            currentDescription={description}
-            onSave={fetchGroupDetails} // <- pass fetchGroupDetails here to refresh after save
-          />
-
-          {/* Invite Member Dialog */}
-          <InviteMemberModal groupId={groupId} />
-          {/* Leave Group Dialog */}
-          <LeaveGroupButton groupId={groupId} />
-          {/* Delete Group */}
-          <DeleteGroupButton groupId={groupId} />
-        </div>
+        {/* Nav component */}
+        <NavOptions
+          groupId={groupId}
+          groupName={groupName}
+          description={description}
+          onRefresh={fetchGroupDetails}
+        />
       </div>
 
       {/* Content wrapper - Takes remaining height */}
@@ -731,45 +666,25 @@ export default function GroupChat() {
                       : message.senderName || "Unknown User"}
                   </div>
 
-                  {/* Message bubble with avatar for others */}
-                  <div className="flex items-end gap-2">
-                    {message.role !== "user" && (
-                      <Avatar className="h-6 w-6 bg-slate-700">
-                        <AvatarFallback className="text-[10px]">
-                          {message.senderName === "Unknown User"
-                            ? "?"
-                            : getInitials(message.senderName)}
-                        </AvatarFallback>
-                      </Avatar>
+                  {/* Message bubble - Removed avatars */}
+                  <div
+                    className={cn(
+                      "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
+                      message.role === "user"
+                        ? "bg-blue-600 text-blue-50 rounded-tr-none"
+                        : "bg-slate-800 text-slate-100 rounded-tl-none"
                     )}
-
-                    <div
-                      className={cn(
-                        "max-w-[80%] rounded-2xl px-4 py-3 text-sm",
-                        message.role === "user"
-                          ? "bg-blue-600 text-blue-50 rounded-tr-none"
-                          : "bg-slate-800 text-slate-100 rounded-tl-none"
-                      )}
-                    >
-                      {message.isGif && message.gifUrl ? (
-                        <div className="w-full max-w-[250px]">
-                          <img
-                            src={message.gifUrl}
-                            alt="GIF"
-                            className="rounded-lg w-full h-auto"
-                          />
-                        </div>
-                      ) : (
-                        message.content || ""
-                      )}
-                    </div>
-
-                    {message.role === "user" && (
-                      <Avatar className="h-6 w-6 bg-blue-700">
-                        <AvatarFallback className="text-[10px] bg-blue-600">
-                          YOU
-                        </AvatarFallback>
-                      </Avatar>
+                  >
+                    {message.isGif && message.gifUrl ? (
+                      <div className="w-full max-w-[250px]">
+                        <img
+                          src={message.gifUrl}
+                          alt="GIF"
+                          className="rounded-lg w-full h-auto"
+                        />
+                      </div>
+                    ) : (
+                      message.content || ""
                     )}
                   </div>
                 </div>
@@ -779,66 +694,6 @@ export default function GroupChat() {
           </div>
         </div>
 
-        {/* GIF Picker Component */}
-        {showGifPicker && (
-          <div className="w-full px-4 py-2 border-t border-slate-800 bg-slate-900">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="Search for GIFs..."
-                    value={gifSearchTerm}
-                    onChange={(e) => setGifSearchTerm(e.target.value)}
-                    className="bg-slate-800 border-slate-700 text-slate-100"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        searchGifs(gifSearchTerm);
-                      }
-                    }}
-                  />
-                  <Button
-                    onClick={() => searchGifs(gifSearchTerm)}
-                    className="bg-blue-600 hover:bg-blue-500"
-                    size="sm"
-                  >
-                    Search
-                  </Button>
-                  <Button
-                    onClick={() => setShowGifPicker(false)}
-                    variant="outline"
-                    size="sm"
-                    className="border-slate-700 text-slate-100"
-                  >
-                    Close
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2 max-h-52 overflow-y-auto">
-                  {gifs.map((gif, index) => (
-                    <div
-                      key={index}
-                      className="cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => handleGifSelect(gif.media_formats.gif.url)}
-                    >
-                      <img
-                        src={gif.media_formats.tinygif.url}
-                        alt={gif.content_description || "GIF"}
-                        className="rounded-md w-full h-auto"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {gifs.length === 0 && (
-                  <div className="text-center text-slate-400 py-4">
-                    No GIFs found. Try another search!
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Input area - Fixed at bottom */}
         <div className="p-4 border-t border-slate-800 bg-slate-900">
           <div className="max-w-4xl mx-auto">
@@ -846,28 +701,12 @@ export default function GroupChat() {
               onSubmit={handleSendMessage}
               className="flex items-center space-x-2"
             >
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEmojiPicker(!showEmojiPicker);
-                  setShowGifPicker(false); // Close GIF picker if open
-                }}
-                className="text-xl p-2 hover:bg-slate-800 rounded-full transition"
-              >
-                😄
-              </button>
-
-              {showEmojiPicker && (
-                <div className="absolute bottom-16 z-50">
-                  <EmojiPicker
-                    onEmojiClick={(emojiData) => {
-                      handleEmojiSelect(emojiData);
-                    }}
-                    theme="dark"
-                  />
-                </div>
-              )}
-
+              <EmojiGifPicker
+                onEmojiSelect={handleEmojiSelect}
+                onGifSelect={handleGifSelect}
+                input={input}
+                setInput={setInput}
+              />
               <Input
                 id="message"
                 placeholder="Type your message..."
@@ -876,14 +715,6 @@ export default function GroupChat() {
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
               />
-
-              <button
-                type="button"
-                onClick={handleGifClick}
-                className="text-xl p-2 hover:bg-slate-800 rounded-full transition"
-              >
-                <BsFiletypeGif />
-              </button>
 
               <Button
                 type="submit"
