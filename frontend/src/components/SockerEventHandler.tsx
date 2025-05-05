@@ -10,7 +10,7 @@ export function SocketEventHandler() {
     if (!window.socket) return;
 
     // Listen for group updates
-    window.socket.on("groupUpdated", (data) => {
+    window.socket.on("groupUpdated", (data: any) => {
       console.log("Group updated event received:", data);
       // Refresh the page to show updated data
       // For a better UX, you could update the UI directly without refreshing
