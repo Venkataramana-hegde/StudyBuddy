@@ -80,9 +80,8 @@ export function EmojiGifPicker({
       >
         😄
       </button>
-
       {/* Emoji Picker */}
-      {/* @ts-expect-error theme prop types are wrong */}
+      {/* @ts-ignore */}
       {showEmojiPicker && (
         <div className="absolute bottom-16 z-50">
           <EmojiPicker
@@ -93,7 +92,6 @@ export function EmojiGifPicker({
           />
         </div>
       )}
-
       {/* GIF button */}
       <button
         type="button"
@@ -102,7 +100,6 @@ export function EmojiGifPicker({
       >
         <BsFiletypeGif />
       </button>
-
       {/* GIF Picker */}
       {showGifPicker && (
         <div className="w-full absolute bottom-16 left-0 px-4 py-2 border-t border-slate-800 bg-slate-900 z-50">
