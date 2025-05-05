@@ -88,7 +88,7 @@ export function EmojiGifPicker({
             onEmojiClick={(emojiData) => {
               handleEmojiSelect(emojiData);
             }}
-            theme="dark"
+            theme={"dark" as any}
           />
         </div>
       )}
