@@ -82,6 +82,7 @@ export function EmojiGifPicker({
       </button>
 
       {/* Emoji Picker */}
+      {/* @ts-expect-error theme prop types are wrong */}
       {showEmojiPicker && (
         <div className="absolute bottom-16 z-50">
           <EmojiPicker
