@@ -5,7 +5,7 @@ import { toast } from "sonner";
 // This component doesn't render anything but handles socket events
 export function SocketEventHandler() {
   const router = useRouter();
-
+//
   useEffect(() => {
     if (!window.socket) return;
 
@@ -19,7 +19,7 @@ export function SocketEventHandler() {
     });
 
     // Listen for group deletions
-    window.socket.on("groupDeleted", (data) => {
+    window.socket.on("groupDeleted", (data: any) => {
       console.log("Group deleted event received:", data);
 
       // Check if user is currently viewing the deleted group
