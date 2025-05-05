@@ -1,5 +1,5 @@
 // app/auth/sign-in/page.tsx
-import { AuthForm } from "@/components/auth-form";
+import { AuthForm } from "@/components/AuthForm";
 
 export default function SignInPage() {
   return (
@@ -10,4 +10,3 @@ export default function SignInPage() {
     </div>
   );
 }
-

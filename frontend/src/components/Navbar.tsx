@@ -8,12 +8,10 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Image from "next/image";
-import { FiVideo } from "react-icons/fi"; // ✅ Import the icon
 
 const Navbar = () => {
   const [user, setUser] = React.useState<{
@@ -73,10 +71,6 @@ const Navbar = () => {
     }
   };
 
-  const handleVideoCallClick = () => {
-    router.push(`/call/${groupId}`);
-  };
-
   return (
     <nav className="w-full py-4 px-6 bg-bgDarkViolet text-white shadow-md">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -92,15 +86,6 @@ const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* ✅ Video Call Button */}
-          <Button
-            variant="ghost"
-            className="text-white hover:bg-white/10"
-            onClick={handleVideoCallClick}
-          >
-            <FiVideo className="mr-2" />
-            Video Call
-          </Button>
 
           {/* Dropdown/Profile Menu */}
           <DropdownMenu>

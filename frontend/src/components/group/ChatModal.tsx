@@ -1,3 +1,4 @@
+// Modified ChatModal.tsx (GroupChat component)
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -11,10 +12,7 @@ import { toast } from "sonner";
 import { useParams } from "next/navigation";
 
 import { EmojiGifPicker } from "./EmojiGifPicker";
-
-//NavOptions
 import { NavOptions } from "./NavOptions";
-// At the top of your file, outside the component
 import io from "socket.io-client";
 
 // Create socket instance but don't connect right away
@@ -47,6 +45,7 @@ export default function GroupChat() {
 
   const [messages, setMessages] = React.useState([]);
   const [input, setInput] = React.useState("");
+  const [messagesLoaded, setMessagesLoaded] = React.useState(false);
   const inputLength = input.trim().length;
   const messagesEndRef = React.useRef(null);
 
@@ -208,16 +207,16 @@ export default function GroupChat() {
           };
         });
 
-        setMessages(formatted);
+        // Only update messages if not already loaded, or if we're refreshing
+        if (!messagesLoaded || formatted.length > 0) {
+          setMessages(formatted);
+          setMessagesLoaded(true);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch messages:", err);
     }
   };
-
-  // Inside your component
-  // Fix for GroupChat component
-  // Replace the socket event handler section in the React.useEffect where you're setting up the socket
 
   React.useEffect(() => {
     if (!groupId) return;
@@ -526,6 +525,7 @@ export default function GroupChat() {
     },
     [groupMembers]
   );
+  
   React.useEffect(() => {
     if (groupId) {
       fetchGroupDetails();
@@ -537,7 +537,42 @@ export default function GroupChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  //Hnalde selecting an emoji
+  // Add a new useEffect to save messages to sessionStorage
+  React.useEffect(() => {
+    if (messages.length > 0 && messagesLoaded) {
+      try {
+        // Create message storage key specific to this group
+        const storageKey = `chat_messages_${groupId}`;
+        // Store messages in sessionStorage
+        sessionStorage.setItem(storageKey, JSON.stringify(messages));
+      } catch (err) {
+        console.error("Error saving messages to sessionStorage:", err);
+      }
+    }
+  }, [messages, groupId, messagesLoaded]);
+
+  // Add a new useEffect to load messages from sessionStorage
+  React.useEffect(() => {
+    if (groupId && !messagesLoaded) {
+      try {
+        const storageKey = `chat_messages_${groupId}`;
+        const savedMessages = sessionStorage.getItem(storageKey);
+        
+        if (savedMessages) {
+          const parsedMessages = JSON.parse(savedMessages);
+          if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
+            setMessages(parsedMessages);
+            // Don't set messagesLoaded to true here - we'll still fetch from server
+            // to ensure we have the latest messages
+          }
+        }
+      } catch (err) {
+        console.error("Error loading messages from sessionStorage:", err);
+      }
+    }
+  }, [groupId, messagesLoaded]);
+
+  //Handle selecting an emoji
   const handleEmojiSelect = (emoji) => {
     setInput((prevInput) => prevInput + emoji);
   };
@@ -547,8 +582,6 @@ export default function GroupChat() {
   };
 
   // Generic send message function to handle both text and GIFs
-  // Find the sendMessage function in your code and modify it like this:
-
   const sendMessage = (messageContent, messageType = "text") => {
     if (!messageContent.trim() || !currentUserId) {
       console.warn("Send blocked: missing content or currentUserId");
@@ -592,7 +625,7 @@ export default function GroupChat() {
       content: content,
       id: tempId,
       senderId: currentUserId,
-      senderName: actualUserName, // FIXED: Using actualUserName instead of undefined senderName
+      senderName: actualUserName,
       isLocalMessage: true,
       messageType: messageType,
       isGif: isGif,
