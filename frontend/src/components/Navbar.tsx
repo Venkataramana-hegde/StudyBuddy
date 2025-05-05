@@ -13,12 +13,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Image from "next/image";
+import { FiVideo } from "react-icons/fi"; // ✅ Import the icon
 
 const Navbar = () => {
   const [user, setUser] = React.useState<{
     name: string;
     email: string;
   } | null>(null);
+  const [groupId, setGroupId] = React.useState("default-group-id"); // ✅ Replace with actual groupId logic
+
   const router = useRouter();
 
   // Fetch user details on mount
@@ -35,6 +38,9 @@ const Navbar = () => {
             name: data.user.name,
             email: data.user.email,
           });
+
+          // Optionally fetch or set groupId here if available
+          setGroupId(data.user.groupId || "default-group-id");
         }
       } catch (err) {
         console.error("Error fetching user:", err);
@@ -64,8 +70,11 @@ const Navbar = () => {
       router.refresh(); // Clear client cache
     } catch (err) {
       console.error("Error during logout:", err);
-      // Optional: Show error toast to user
     }
+  };
+
+  const handleVideoCallClick = () => {
+    router.push(`/call/${groupId}`);
   };
 
   return (
@@ -82,31 +91,45 @@ const Navbar = () => {
           <h1 className="text-2xl font-bold tracking-wide">StudyBuddy</h1>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="text-white border-white hover:bg-white hover:text-bgDarkViolet"
-            >
-              {/* {user ? user.name : "Loading..."} */}
-              Profile
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-64">
-            {user && (
-              <DropdownMenuGroup>
-                <DropdownMenuItem className="flex flex-col items-start">
-                  <span className="font-medium">{user.name}</span>
-                  <span className="text-sm text-muted-foreground">
-                    {user.email}
-                  </span>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>Log out</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-4">
+          {/* ✅ Video Call Button */}
+          <Button
+            variant="ghost"
+            className="text-white hover:bg-white/10"
+            onClick={handleVideoCallClick}
+          >
+            <FiVideo className="mr-2" />
+            Video Call
+          </Button>
+
+          {/* Dropdown/Profile Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="text-white border-white hover:bg-white hover:text-bgDarkViolet"
+              >
+                Profile
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-64">
+              {user && (
+                <DropdownMenuGroup>
+                  <DropdownMenuItem className="flex flex-col items-start">
+                    <span className="font-medium">{user.name}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {user.email}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </nav>
   );

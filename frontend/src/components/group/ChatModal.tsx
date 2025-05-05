@@ -76,7 +76,8 @@ export default function GroupChat() {
         if (data.data.members) {
           const membersMap = {};
           data.data.members.forEach((member) => {
-            membersMap[member.userId] = member.username || "Unknown User";
+            membersMap[member.userId || member._id] =
+              member.username || member.name || "Unknown User";
           });
           setGroupMembers(membersMap);
         }
@@ -110,18 +111,24 @@ export default function GroupChat() {
         const membersMap = {};
 
         // Handle different response structures
-        if (Array.isArray(data.data)) {
+        if (Array.isArray(data.data.members)) {
+          // If data.data.members is an array
+          data.data.members.forEach((member) => {
+            membersMap[member._id || member.userId] =
+              member.name || member.username || "Unknown User";
+          });
+        } else if (Array.isArray(data.data)) {
           // If data.data is an array
           data.data.forEach((member) => {
-            membersMap[member.userId || member._id] =
-              member.username || member.name || "Unknown User";
+            membersMap[member._id || member.userId] =
+              member.name || member.username || "Unknown User";
           });
         } else if (typeof data.data === "object") {
           // If data.data is an object with user IDs as keys
           Object.keys(data.data).forEach((userId) => {
             const member = data.data[userId];
             membersMap[userId] =
-              member.username || member.name || "Unknown User";
+              member.name || member.username || "Unknown User";
           });
         } else {
           console.error("Unexpected group members data structure:", data.data);
@@ -153,7 +160,7 @@ export default function GroupChat() {
       const data = await res.json();
       console.log("Fetched messages", data);
       if (data.success && data.data) {
-        const messages = data.data || [];
+        const messages = data.data.messages || data.data || [];
 
         // Process messages and extract sender information
         const formatted = messages.map((msg) => {
@@ -164,13 +171,10 @@ export default function GroupChat() {
             (msg.sender.username || msg.sender.name)
           ) {
             const senderName = msg.sender.username || msg.sender.name;
-            if (msg.senderId !== userId) {
-              // Don't override current user's name
-              setGroupMembers((prev) => ({
-                ...prev,
-                [msg.senderId]: senderName,
-              }));
-            }
+            setGroupMembers((prev) => ({
+              ...prev,
+              [msg.senderId]: senderName,
+            }));
           }
 
           // Check if this is a GIF message
@@ -188,16 +192,16 @@ export default function GroupChat() {
             }
           }
 
+          // Get the sender name
+          const senderName =
+            msg.senderName || groupMembers[msg.senderId] || "Unknown User";
+
           return {
             role: msg.senderId === userId ? "user" : "agent",
             content: messageContent,
             id: msg._id || Date.now().toString(),
             senderId: msg.senderId,
-            // Always use "You" for current user's messages
-            senderName:
-              msg.senderId === userId
-                ? "You"
-                : groupMembers[msg.senderId] || "Unknown User",
+            senderName: senderName,
             isGif: isGif,
             gifUrl: gifUrl,
             messageType: msg.messageType || "text",
@@ -390,9 +394,21 @@ export default function GroupChat() {
         // Extract message information
         const messageId = message._id || Date.now().toString();
         const senderId = message.senderId;
+
+        // Log incoming message details to help with debugging
+        console.log("Incoming message details:", {
+          messageId,
+          senderId,
+          currentUserId: userId,
+          isSentByCurrentUser: senderId === userId,
+        });
+
         const messageContent =
           message.message || message.content || message.text || "";
         const messageType = message.messageType || "text";
+
+        // Get sender name from message
+        const messageSenderName = message.senderName;
 
         // Check if this is a GIF message
         const isGif =
@@ -408,27 +424,32 @@ export default function GroupChat() {
           }
         }
 
-        // For messages from the current user, always use "You"
-        let senderName = "Unknown User";
-        if (senderId === userId) {
-          senderName = "You";
-        } else {
-          // Try to get sender name from members map, fetch user info if not found
-          senderName = groupMembers[senderId] || "Unknown User";
+        // For other users, use their name from message or members map
+        let senderName;
+        // We don't need to determine "You" here - that will be handled in the render function
+        senderName =
+          messageSenderName || groupMembers[senderId] || "Unknown User";
 
-          // If we don't have this user's info, try to update our members map
-          if (senderName === "Unknown User" && message.sender) {
-            // Some APIs include sender info directly in the message
-            const senderInfo = message.sender;
-            if (senderInfo.username || senderInfo.name) {
-              const newName = senderInfo.username || senderInfo.name;
-              setGroupMembers((prev) => ({
-                ...prev,
-                [senderId]: newName,
-              }));
-              senderName = newName;
-            }
+        // If we don't have this user's info, try to update our members map
+        if (senderName === "Unknown User" && message.sender) {
+          // Some APIs include sender info directly in the message
+          const senderInfo = message.sender;
+          if (senderInfo.username || senderInfo.name) {
+            const newName = senderInfo.username || senderInfo.name;
+            setGroupMembers((prev) => ({
+              ...prev,
+              [senderId]: newName,
+            }));
+            senderName = newName;
           }
+        }
+
+        // If we now have a valid sender name, add it to our members map
+        if (senderName !== "Unknown User") {
+          setGroupMembers((prev) => ({
+            ...prev,
+            [senderId]: senderName,
+          }));
         }
 
         console.log("Processing incoming message:", {
@@ -479,11 +500,15 @@ export default function GroupChat() {
           }
 
           // Otherwise, add as a new message
-          console.log("Adding new message from socket");
+          console.log("Adding new message from socket", {
+            senderId,
+            currentUserId: userId,
+            isSentByCurrentUser: String(senderId) === String(userId),
+          });
           return [
             ...prev,
             {
-              role: senderId === userId ? "user" : "agent",
+              role: String(senderId) === String(userId) ? "user" : "agent",
               content: content,
               id: messageId,
               senderId: senderId,
@@ -501,7 +526,6 @@ export default function GroupChat() {
     },
     [groupMembers]
   );
-
   React.useEffect(() => {
     if (groupId) {
       fetchGroupDetails();
@@ -523,6 +547,8 @@ export default function GroupChat() {
   };
 
   // Generic send message function to handle both text and GIFs
+  // Find the sendMessage function in your code and modify it like this:
+
   const sendMessage = (messageContent, messageType = "text") => {
     if (!messageContent.trim() || !currentUserId) {
       console.warn("Send blocked: missing content or currentUserId");
@@ -532,14 +558,22 @@ export default function GroupChat() {
     // Create a temporary ID for local message
     const tempId = `temp-${Date.now()}`;
 
-    // Always use "You" for current user's messages in the UI
-    const senderName = "You";
+    // Log sending message details
+    console.log("Sending message as user:", {
+      currentUserId,
+      tempId,
+      messageType,
+    });
+
+    // Store the actual username (not "You") in the members map
+    // This ensures we have the real name for other components
+    const actualUserName = currentUserName || "You";
 
     // Make sure we have our user ID in the members map
     if (!groupMembers[currentUserId]) {
       setGroupMembers((prev) => ({
         ...prev,
-        [currentUserId]: currentUserName || "You",
+        [currentUserId]: actualUserName,
       }));
     }
 
@@ -558,7 +592,7 @@ export default function GroupChat() {
       content: content,
       id: tempId,
       senderId: currentUserId,
-      senderName: senderName,
+      senderName: actualUserName, // FIXED: Using actualUserName instead of undefined senderName
       isLocalMessage: true,
       messageType: messageType,
       isGif: isGif,
@@ -653,20 +687,22 @@ export default function GroupChat() {
             ) : (
               messages.map((message, index) => (
                 <div
-                  key={`${message.id}-${index}`} // Combine ID with index for guaranteed uniqueness
+                  key={`${message.id}-${index}`}
                   className={cn(
                     "flex flex-col",
                     message.role === "user" ? "items-end" : "items-start"
                   )}
                 >
-                  {/* Sender name */}
+                  {/* Sender name - FIXED: Only show "You" for current user's messages */}
                   <div className="px-2 mb-1 text-xs text-slate-400">
-                    {message.role === "user"
+                    {/* Use both role and explicit ID comparison as fallbacks for each other */}
+                    {message.role === "user" ||
+                    String(message.senderId) === String(currentUserId)
                       ? "You"
                       : message.senderName || "Unknown User"}
                   </div>
 
-                  {/* Message bubble - Removed avatars */}
+                  {/* Message bubble */}
                   <div
                     className={cn(
                       "max-w-[80%] rounded-2xl px-4 py-3 text-sm",

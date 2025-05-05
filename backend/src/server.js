@@ -30,13 +30,16 @@ io.on("connection", (socket) => {
   socket.on("sendGroupMessage", async (messageData, callback) => {
     try {
       // Your existing code to save the message to MongoDB
-      const { groupId, senderId, message } = messageData;
+      const { groupId, senderId, message, senderName, messageType } =
+        messageData;
 
       // Save message to MongoDB (your existing code)
       const newMessage = new Message({
         groupId,
         senderId,
         message,
+        senderName, // Store sender name in the database
+        messageType: messageType || "text",
       });
 
       await newMessage.save();
@@ -46,6 +49,8 @@ io.on("connection", (socket) => {
         _id: newMessage._id,
         senderId,
         message,
+        senderName, // Include sender name in the emitted message
+        messageType: messageType || "text",
         createdAt: newMessage.createdAt,
       });
 
